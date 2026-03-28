@@ -152,20 +152,6 @@ export default function ProjeeDashboard() {
               <Tabs.Tab value="active">進行中</Tabs.Tab>
             </Tabs.List>
           </Tabs>
-
-          <Group gap={8} visibleFrom="xs">
-            <Box
-              style={{
-                width: 8,
-                height: 8,
-                background: "#40c057",
-                borderRadius: "50%",
-              }}
-            />
-            <Text size="xs" fw={700} c="dimmed">
-              LIVE UPDATES
-            </Text>
-          </Group>
         </Group>
 
         <Paper
