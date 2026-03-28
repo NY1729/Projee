@@ -57,8 +57,14 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
   useEffect(() => {
     if (!user) return;
 
-    // 初回ロード
-    fetchHeaderProfile();
+    let isMounted = true;
+
+    const initializeProfile = async () => {
+      // 初回ロード
+      await fetchHeaderProfile();
+    };
+
+    initializeProfile();
 
     /**
      * 1. Supabase Auth の状態変化を監視
@@ -68,7 +74,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     const {
       data: { subscription: authListener },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "USER_UPDATED" || event === "SIGNED_IN") {
+      if (isMounted && (event === "USER_UPDATED" || event === "SIGNED_IN")) {
         fetchHeaderProfile();
       }
     });
@@ -87,11 +93,14 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
           table: "profiles",
           filter: `id=eq.${user.id}`,
         },
-        () => fetchHeaderProfile(),
+        () => {
+          if (isMounted) fetchHeaderProfile();
+        },
       )
       .subscribe();
 
     return () => {
+      isMounted = false;
       authListener.unsubscribe();
       supabase.removeChannel(profileChannel);
     };
