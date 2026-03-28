@@ -1,128 +1,310 @@
 "use client";
 
+import { useEffect, useState, useCallback } from "react";
 import {
   Container,
-  Title,
+  Group,
+  Box,
   Text,
   Stack,
-  Divider,
-  Button,
   Paper,
-  Box,
+  Avatar,
+  Title,
+  Tabs,
   rem,
-  Group,
-  ThemeIcon,
+  Button,
+  Skeleton,
+  Modal,
+  TextInput,
+  FileButton,
+  UnstyledButton,
+  Divider,
 } from "@mantine/core";
-import { IconArrowLeft, IconShieldCheck } from "@tabler/icons-react";
-import Link from "next/link";
+import { useDisclosure } from "@mantine/hooks";
+import {
+  IconRocket,
+  IconCircleCheck,
+  IconSettings,
+  IconCamera,
+  IconCheck,
+  IconTrash,
+} from "@tabler/icons-react";
+import { supabase } from "@/lib/supabase";
+import { DashboardHeader } from "../components/DashboardHeader";
+import { ProjectRow } from "../components/ProjectRow";
+import { Project, Profile } from "../types/project";
+import { useAuth } from "../hooks/useAuth";
+import { updateProfile, deleteAccount } from "../actions/profile";
+import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 
-export default function PrivacyPage() {
+export default function ProfilePage() {
+  const { user, loading: authLoading } = useAuth();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<string | null>("owning");
+
+  const [opened, { open, close }] = useDisclosure(false);
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const fetchProfile = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", user.id);
+    if (data && data.length > 0) {
+      const p = data[0];
+      if (p.avatar_url) p.avatar_url = `${p.avatar_url}?t=${Date.now()}`;
+      setProfile(p);
+    }
+  }, [user]);
+
+  const fetchMyProjects = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("project_with_members")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (data)
+      setProjects(
+        (data as Project[]).filter((p) =>
+          p.member_details?.some((m) => m.user_id === user.id),
+        ),
+      );
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetchProfile();
+    fetchMyProjects();
+  }, [user, fetchProfile, fetchMyProjects]);
+
+  if (authLoading || !user) return null;
+
+  const username = profile?.username || user.email?.split("@")[0];
+  const displayAvatar = profile?.avatar_url || null;
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaveLoading(true);
+    const formData = new FormData(event.currentTarget);
+    if (avatarFile) formData.append("avatar", avatarFile);
+
+    try {
+      await updateProfile(formData);
+      notifications.show({
+        title: "成功",
+        message: "プロフィールを更新しました",
+        color: "green",
+      });
+      setAvatarFile(null);
+      setPreviewUrl(null);
+      close();
+      await fetchProfile();
+    } catch (e) {
+      notifications.show({
+        title: "エラー",
+        message: "更新に失敗しました",
+        color: "red",
+      });
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const openDeleteModal = () => {
+    modals.openConfirmModal({
+      title: "アカウントの削除",
+      centered: true,
+      children: (
+        <Text size="sm">
+          アカウントを削除すると、これまでのプロジェクト、プロフィール、参加履歴がすべて失われます。この操作は取り消せません。本当に続けますか？
+        </Text>
+      ),
+      labels: { confirm: "削除する", cancel: "キャンセル" },
+      confirmProps: { color: "red" },
+      onConfirm: async () => {
+        try {
+          await deleteAccount();
+          notifications.show({
+            title: "削除完了",
+            message: "ご利用ありがとうございました",
+            color: "blue",
+          });
+          window.location.href = "/";
+        } catch (e) {
+          notifications.show({
+            title: "エラー",
+            message: "削除に失敗しました。管理者に連絡してください。",
+            color: "red",
+          });
+        }
+      },
+    });
+  };
+
   return (
-    <Box bg="#F8FAFB" mih="100vh" py={rem(60)}>
-      <Container size="sm">
-        <Paper p={rem(40)} radius="md" withBorder shadow="sm">
-          <Stack gap="xl">
-            <Box>
-              <Group gap="xs" mb={8}>
-                <ThemeIcon variant="light" color="blue" radius="xl">
-                  <IconShieldCheck size={18} />
-                </ThemeIcon>
-                <Title
-                  order={1}
-                  style={{ fontSize: rem(28), letterSpacing: "-0.02em" }}
-                >
-                  プライバシーポリシー
-                </Title>
-              </Group>
-              <Text size="sm" c="dimmed">
-                最終更新日: 2026年3月29日
-              </Text>
-            </Box>
-
-            <Divider />
-
-            <Stack gap="lg">
-              <Box>
-                <Text fw={700} mb={8}>
-                  1. 収集する情報
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  当サービスは、外部認証プロバイダ（GitHub / Google / Discord）から提供される以下の情報を収集します。
-                  <br />
-                  ・氏名またはユーザー名
-                  <br />
-                  ・メールアドレス
-                  <br />
-                  ・プロフィール画像URL
-                </Text>
-              </Box>
-
-              <Box>
-                <Text fw={700} mb={8}>
-                  2. 情報の利用目的
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  ・ユーザーの本人確認およびサービス提供のため
-                  <br />
-                  ・プロジェクトの所有者・参加者としての表示のため
-                  <br />
-                  ・重大な変更に関する通知をメールで行うため
-                </Text>
-              </Box>
-
-              <Box>
-                <Text fw={700} mb={8}>
-                  3. データの保存と安全管理
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  データは Supabase (PostgreSQL) 上で管理され、適切なセキュリティ対策を講じています。ユーザー自身がアカウント削除を実行した場合、すべての関連データは直ちに物理削除されます。
-                </Text>
-              </Box>
-
-              <Box>
-                <Text fw={700} mb={8}>
-                  4. Cookieの使用について
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  本サービスは、ユーザー認証の維持を目的として Cookie を使用しています。これはサービスの提供に必要なものであり、広告目的では使用しません。ブラウザの設定により Cookie を無効にすることができますが、その場合、一部の機能が正常に動作しなくなる可能性があります。
-                </Text>
-              </Box>
-
-              <Box>
-                <Text fw={700} mb={8}>
-                  5. 第三者への提供
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  収集した個人情報は、法令に基づく場合を除き、ユーザーの同意なく第三者に提供することはありません。
-                </Text>
-              </Box>
-
-              <Box>
-                <Text fw={700} mb={8}>
-                  6. お問い合わせ
-                </Text>
-                <Text size="sm" style={{ lineHeight: 1.8 }}>
-                  個人情報の取り扱いに関するお問い合わせは、nkgwyuu@gmail.comまでご連絡ください。
-                </Text>
-              </Box>
-            </Stack>
-
-            <Divider mt="xl" />
-
-            <Group justify="center">
-              <Button
-                component={Link}
-                href="/login"
-                variant="subtle"
-                color="gray"
-                leftSection={<IconArrowLeft size={14} />}
+    <Box bg="#FBFCFD" mih="100vh">
+      <DashboardHeader user={user} />
+      <Container size="lg" pt={50} pb={80}>
+        <Group align="flex-start" gap={40} wrap="nowrap" visibleFrom="sm">
+          <Stack style={{ width: rem(280) }}>
+            <Skeleton visible={loading} circle mb="md">
+              <Avatar
+                src={displayAvatar}
+                size={280}
+                radius={rem(140)}
+                style={{ border: "1px solid var(--mantine-color-gray-2)" }}
+              />
+            </Skeleton>
+            <Skeleton visible={loading} height={40} width="90%">
+              <Title
+                order={1}
+                style={{ fontSize: rem(28), letterSpacing: "-0.03em" }}
               >
-                ログイン画面に戻る
+                {username}
+              </Title>
+            </Skeleton>
+            <Skeleton visible={loading} height={40} mt="md">
+              <Button
+                variant="default"
+                fullWidth
+                leftSection={<IconSettings size={16} />}
+                onClick={open}
+              >
+                編集する
               </Button>
-            </Group>
+
+              <Divider
+                my="md"
+                label="Danger Zone"
+                labelPosition="center"
+                color="red.2"
+              />
+
+              <Button
+                variant="subtle"
+                color="red"
+                fullWidth
+                leftSection={<IconTrash size={16} />}
+                onClick={openDeleteModal}
+              >
+                アカウントを削除
+              </Button>
+            </Skeleton>
           </Stack>
-        </Paper>
+
+          <Stack style={{ flex: 1 }}>
+            <Tabs value={activeTab} onChange={setActiveTab} variant="outline">
+              <Tabs.List>
+                <Tabs.Tab value="owning" leftSection={<IconRocket size={14} />}>
+                  所有プロジェクト
+                </Tabs.Tab>
+                <Tabs.Tab
+                  value="joined"
+                  leftSection={<IconCircleCheck size={14} />}
+                >
+                  参加中
+                </Tabs.Tab>
+              </Tabs.List>
+              <Box mt="xl">
+                <Paper withBorder radius="md">
+                  {loading ? (
+                    <Skeleton height={200} />
+                  ) : projects.length > 0 ? (
+                    projects
+                      .filter((p) =>
+                        activeTab === "owning"
+                          ? p.owner_id === user.id
+                          : p.owner_id !== user.id,
+                      )
+                      .map((p) => (
+                        <ProjectRow key={p.id} proj={p} currentUser={user} />
+                      ))
+                  ) : (
+                    <Box p="xl" ta="center">
+                      <Text c="dimmed">なし</Text>
+                    </Box>
+                  )}
+                </Paper>
+              </Box>
+            </Tabs>
+          </Stack>
+        </Group>
       </Container>
+
+      <Modal
+        opened={opened}
+        onClose={close}
+        title="プロフィール編集"
+        centered
+        radius="md"
+      >
+        <form onSubmit={handleSubmit}>
+          <Stack gap="xl">
+            <Group justify="center" pos="relative">
+              <Avatar
+                src={previewUrl || displayAvatar}
+                size={120}
+                radius={60}
+              />
+              <FileButton
+                onChange={(f) => {
+                  setAvatarFile(f);
+                  if (f) {
+                    const r = new FileReader();
+                    r.onloadend = () => setPreviewUrl(r.result as string);
+                    r.readAsDataURL(f);
+                  }
+                }}
+                accept="image/*"
+              >
+                {(props) => (
+                  <UnstyledButton
+                    {...props}
+                    pos="absolute"
+                    style={{
+                      width: 120,
+                      height: 120,
+                      borderRadius: 60,
+                      background: "rgba(0,0,0,0.4)",
+                      color: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <IconCamera />
+                  </UnstyledButton>
+                )}
+              </FileButton>
+            </Group>
+            <TextInput
+              label="ユーザー名"
+              name="username"
+              defaultValue={username}
+              leftSection="@"
+              required
+              radius="md"
+            />
+            <Button
+              type="submit"
+              color="dark"
+              loading={saveLoading}
+              fullWidth
+              radius="md"
+              leftSection={<IconCheck size={16} />}
+            >
+              保存
+            </Button>
+          </Stack>
+        </form>
+      </Modal>
     </Box>
   );
 }

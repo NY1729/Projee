@@ -82,12 +82,12 @@ export default function PrivacyPage() {
             <Group justify="center">
               <Button
                 component={Link}
-                href="/login"
+                href="/"
                 variant="subtle"
                 color="gray"
                 leftSection={<IconArrowLeft size={14} />}
               >
-                ログイン画面に戻る
+                ホーム画面に戻る
               </Button>
             </Group>
           </Stack>
