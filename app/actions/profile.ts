@@ -36,29 +36,51 @@ export async function updateProfile(formData: FormData) {
   const username = formData.get("username") as string;
   const avatarFile = formData.get("avatar") as File | null;
 
-  // 現在の avatar_url を取得
+  // 現在のプロファイルを一括取得
   const { data: current } = await supabase
     .from("profiles")
     .select("avatar_url")
     .eq("id", user.id)
     .single();
+
   let avatarUrl = current?.avatar_url;
 
   // 1. 画像アップロード (存在する場合)
   if (avatarFile && avatarFile.size > 0) {
     const fileExt = avatarFile.name.split(".").pop();
-    const fileName = `${user.id}/avatar.${fileExt}`;
+
+    // 【修正ポイント】ファイル名にタイムスタンプを付与
+    // 例: user_id/avatar_1711656274000.jpg
+    const timestamp = Date.now();
+    const fileName = `${user.id}/avatar_${timestamp}.${fileExt}`;
+
+    // 古い画像がある場合は削除（ストレージ容量の節約のため）
+    if (current?.avatar_url) {
+      // 公開URLからパス部分を抽出して削除
+      const oldPath = current.avatar_url.split("/public/avatars/")[1];
+      if (oldPath) {
+        await supabase.storage.from("avatars").remove([oldPath]);
+      }
+    }
+
+    // 新しいファイル名でアップロード
     const { error: uploadError } = await supabase.storage
       .from("avatars")
-      .upload(fileName, avatarFile, { cacheControl: "0", upsert: true });
+      .upload(fileName, avatarFile, {
+        cacheControl: "3600", // ファイル名が変わるのでキャッシュを効かせてもOK
+        upsert: false,
+      });
+
     if (uploadError) throw uploadError;
+
     const {
       data: { publicUrl },
     } = supabase.storage.from("avatars").getPublicUrl(fileName);
+
     avatarUrl = publicUrl;
   }
 
-  // 2. profiles テーブルの更新 (username と avatar_url のみ)
+  // 2. profiles テーブルの更新
   const { error: dbError } = await supabase
     .from("profiles")
     .update({
@@ -78,7 +100,6 @@ export async function updateProfile(formData: FormData) {
   revalidatePath("/profile");
 }
 
-// src/app/actions/profile.ts に追加
 export async function deleteAccount() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -99,12 +120,9 @@ export async function deleteAccount() {
     },
   );
 
-  // SQL関数(RPC)を呼び出す
   const { error } = await supabase.rpc("delete_user_account");
-
   if (error) throw error;
 
-  // ログアウト処理を行い、クッキーをクリア
   await supabase.auth.signOut();
   revalidatePath("/");
 }

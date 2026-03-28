@@ -97,13 +97,9 @@ export default function ProfilePage() {
 
     try {
       await updateProfile(formData);
-      notifications.show({
-        title: "成功",
-        message: "プロフィールを更新しました",
-        color: "green",
-      });
       setAvatarFile(null);
       setPreviewUrl(null);
+      await supabase.auth.refreshSession();
       close();
       await fetchProfile();
     } catch (e) {

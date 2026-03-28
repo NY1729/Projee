@@ -11,7 +11,6 @@ import {
   Avatar,
   Menu,
   UnstyledButton,
-  Divider,
 } from "@mantine/core";
 import {
   IconPlus,
@@ -22,47 +21,97 @@ import {
 import { supabase } from "@/lib/supabase";
 import { User } from "@supabase/supabase-js";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Profile } from "../types/project";
 import { useRouter } from "next/navigation";
+
 type DashboardHeaderProps = {
   user: User | null;
 };
 
 export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
+  const [headerProfile, setHeaderProfile] = useState<Profile | null>(null);
+  const router = useRouter();
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
   };
 
-  const [headerProfile, setHeaderProfile] = useState<Profile | null>(null);
+  /**
+   * profilesテーブルから最新情報を取得する関数
+   */
+  const fetchHeaderProfile = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username, full_name, avatar_url, updated_at")
+      .eq("id", user.id)
+      .single();
+
+    if (data && !error) {
+      setHeaderProfile(data as Profile);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
-    const getHeaderProfile = async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, username, full_name, avatar_url, updated_at")
-        .eq("id", user.id)
-        .single();
-      if (data) setHeaderProfile(data);
-    };
-    getHeaderProfile();
-  }, [user]);
 
+    // 初回ロード
+    fetchHeaderProfile();
+
+    /**
+     * 1. Supabase Auth の状態変化を監視
+     * サーバーアクションの auth.updateUser() によってメタデータが更新されると
+     * 'USER_UPDATED' イベントが発火します。
+     */
+    const {
+      data: { subscription: authListener },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "USER_UPDATED" || event === "SIGNED_IN") {
+        fetchHeaderProfile();
+      }
+    });
+
+    /**
+     * 2. profiles テーブルの直接的な更新を購読 (Realtime)
+     * 他のタブやデバイスでの変更を即座に反映させます。
+     */
+    const profileChannel = supabase
+      .channel(`header_profile_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${user.id}`,
+        },
+        () => fetchHeaderProfile(),
+      )
+      .subscribe();
+
+    return () => {
+      authListener.unsubscribe();
+      supabase.removeChannel(profileChannel);
+    };
+  }, [user, fetchHeaderProfile]);
+
+  // 表示用データの計算
+  // サーバー側でファイル名が変わるため、URLの変化そのものを key に渡して再描画を促します
   const displayAvatar =
     headerProfile?.avatar_url || user?.user_metadata?.avatar_url;
   const displayName =
     headerProfile?.full_name?.split(" ")[0] ||
-    user?.user_metadata?.full_name ||
+    headerProfile?.username ||
+    user?.user_metadata?.full_name?.split(" ")[0] ||
     "User";
-  const router = useRouter();
 
   return (
     <Paper
       component="header"
       style={{
-        borderBottom: "0.5px solid var(--mantine-color-gray-2)", // 1px → 0.5px
+        borderBottom: "0.5px solid var(--mantine-color-gray-2)",
         position: "sticky",
         top: 0,
         zIndex: 100,
@@ -75,7 +124,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     >
       <Container size="lg" style={{ width: "100%" }}>
         <Group justify="space-between" align="center">
-          {/* ── ロゴ ── */}
+          {/* ロゴ */}
           <Link href="/" style={{ textDecoration: "none" }}>
             <Group gap={8} align="center">
               <Box
@@ -87,7 +136,6 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  flexShrink: 0,
                 }}
               >
                 <Text
@@ -102,7 +150,6 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                 fw={600}
                 style={{
                   fontSize: rem(15),
-                  letterSpacing: "-0.01em",
                   color: "var(--mantine-color-dark-9)",
                 }}
                 visibleFrom="xs"
@@ -112,26 +159,19 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
             </Group>
           </Link>
 
-          {/* ── 右側 ── */}
           {user && (
             <Group gap={10} align="center">
-              {/* New Project ボタン */}
               <Button
                 component={Link}
                 href="/new"
-                leftSection={<IconPlus size={14} stroke={2.5} />}
+                leftSection={<IconPlus size={14} />}
                 radius="md"
                 size="sm"
-                style={{
-                  background: "#0f0f0f",
-                  fontWeight: 500,
-                  fontSize: rem(13),
-                }}
+                style={{ background: "#0f0f0f" }}
               >
                 New Project
               </Button>
 
-              {/* ユーザーメニュー */}
               <Menu
                 shadow="md"
                 width={200}
@@ -148,7 +188,6 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                         padding: `${rem(4)} ${rem(8)}`,
                         borderRadius: rem(6),
                         border: "0.5px solid var(--mantine-color-gray-3)",
-                        transition: "background 0.15s",
                       }}
                       className="header-user-btn"
                     >
@@ -156,28 +195,21 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                         src={displayAvatar}
                         radius="xl"
                         size={24}
-                        name={displayName}
+                        // ファイル名が変わった瞬間にコンポーネントをリセットして新画像を強制ロード
+                        key={displayAvatar}
                       />
-                      <Text
-                        size="sm"
-                        fw={500}
-                        visibleFrom="sm"
-                        style={{ letterSpacing: "-0.01em" }}
-                      >
+                      <Text size="sm" fw={500} visibleFrom="sm">
                         {displayName}
                       </Text>
                       <IconChevronDown
                         size={13}
                         color="var(--mantine-color-gray-5)"
-                        style={{ flexShrink: 0 }}
                       />
                     </Group>
                   </UnstyledButton>
                 </Menu.Target>
 
-                <Menu.Dropdown
-                  style={{ border: "0.5px solid var(--mantine-color-gray-2)" }}
-                >
+                <Menu.Dropdown>
                   <Box
                     px={12}
                     py={10}
@@ -185,8 +217,8 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                       borderBottom: "0.5px solid var(--mantine-color-gray-1)",
                     }}
                   >
-                    <Text size="xs" fw={500} truncate>
-                      {displayName}
+                    <Text size="xs" fw={600} truncate>
+                      {headerProfile?.full_name || displayName}
                     </Text>
                     <Text size="xs" c="dimmed" truncate>
                       {user.email}
@@ -195,17 +227,15 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                   <Box p={4}>
                     <Menu.Item
                       leftSection={<IconUser size={14} />}
-                      style={{ fontSize: rem(13), borderRadius: rem(4) }}
                       onClick={() => router.push("/profile")}
                     >
                       プロフィール
                     </Menu.Item>
-                    <Menu.Divider style={{ margin: `${rem(4)} 0` }} />
+                    <Menu.Divider />
                     <Menu.Item
                       color="red"
                       leftSection={<IconLogout size={14} />}
                       onClick={handleLogout}
-                      style={{ fontSize: rem(13), borderRadius: rem(4) }}
                     >
                       ログアウト
                     </Menu.Item>
@@ -216,12 +246,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
           )}
         </Group>
       </Container>
-
-      <style>{`
-        .header-user-btn:hover {
-          background: var(--mantine-color-gray-0) !important;
-        }
-      `}</style>
+      <style>{`.header-user-btn:hover { background: var(--mantine-color-gray-0) !important; }`}</style>
     </Paper>
   );
 };

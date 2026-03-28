@@ -15,7 +15,7 @@ import {
   ThemeIcon,
 } from "@mantine/core";
 import {
-  IconArrowUpRight,
+  IconPlus,
   IconUserPlus,
   IconUserMinus,
   IconUserCheck,
@@ -46,7 +46,6 @@ export const ProjectRow = ({
 }) => {
   const router = useRouter();
   const members = proj.member_details ?? [];
-  console.log(members);
 
   // 認証情報の判定
   const isApproved = members.some(
@@ -180,7 +179,7 @@ export const ProjectRow = ({
         ))}
       </Group>
 
-      {/* 5. TEAM: メンバーアバター */}
+      {/* 5. TEAM: メンバーアバター（リアルタイム反映対応） */}
       <Avatar.Group spacing="xs">
         {members
           .filter((m) => m.status === "approved")
@@ -188,7 +187,9 @@ export const ProjectRow = ({
           .map((m) => (
             <Tooltip key={m.user_id} label={m.username} withArrow>
               <Avatar
-                src={m.avatar_url} // 最新のアバターURLを表示
+                src={m.avatar_url}
+                // URL（ファイル名）が変更された際にコンポーネントを強制再描画させる
+                key={m.avatar_url}
                 size={26}
                 radius="xl"
                 name={m.username ?? undefined}
@@ -197,7 +198,7 @@ export const ProjectRow = ({
           ))}
       </Avatar.Group>
 
-      {/* 6. ACTIONS: ラベル付きボタンへの修正 */}
+      {/* 6. ACTIONS */}
       <Group justify="flex-end">
         {currentUser && !isOwner && (
           <Box onClick={(e) => e.stopPropagation()}>
