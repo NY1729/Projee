@@ -25,7 +25,7 @@ import {
   Loader,
   Center,
   ActionIcon,
-  ThemeIcon,
+  ScrollArea,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import {
@@ -46,8 +46,6 @@ import {
   IconSettings,
   IconUsers,
   IconActivity,
-  IconLock,
-  IconWorld,
 } from "@tabler/icons-react";
 import { supabase } from "@/lib/supabase";
 import { Project } from "@/app/types/project";
@@ -55,7 +53,6 @@ import { useAuth } from "@/app/hooks/useAuth";
 import { DashboardHeader } from "@/app/components/DashboardHeader";
 import { modals } from "@mantine/modals";
 
-// ... (ICON_MAP 等の定数は変更なし)
 const ICON_MAP: Record<string, React.FC<{ size?: number; stroke?: number }>> = {
   IconRocket,
   IconCode,
@@ -119,7 +116,7 @@ const fieldStyles = {
   },
 } as const;
 
-// ─── UI Components ──────────────────────────────────────────────
+// ─── Section コンポーネント ──────────────────────────────────────────────
 interface SectionProps {
   title: string;
   children: React.ReactNode;
@@ -176,6 +173,21 @@ const Section = ({ title, children, footer, danger = false }: SectionProps) => (
   </Paper>
 );
 
+// ─── モバイル用タブナビ ──────────────────────────────────────────────
+const NAV_ITEMS: {
+  id: NavSection;
+  icon: React.FC<{ size?: number }>;
+  label: string;
+  danger?: boolean;
+}[] = [
+  { id: "overview", icon: IconSettings, label: "Overview" },
+  { id: "status", icon: IconActivity, label: "Status" },
+  { id: "team", icon: IconUsers, label: "Team" },
+  { id: "requests", icon: IconCheck, label: "Requests" },
+  { id: "danger", icon: IconTrash, label: "Danger", danger: true },
+];
+
+// ─── デスクトップ用サイドナビアイテム ──────────────────────────────────────────────
 interface NavItemProps {
   id: NavSection;
   icon: React.FC<{ size?: number; stroke?: number }>;
@@ -264,6 +276,7 @@ export default function ProjectSettingsPage() {
         router.push("/");
         return;
       }
+
       const { data: detailData } = await supabase
         .from("project_details")
         .select("*")
@@ -295,10 +308,8 @@ export default function ProjectSettingsPage() {
 
   useEffect(() => {
     if (!params.id) return;
-
     const channel = supabase
       .channel(`project-settings-live-${params.id}`)
-      // プロジェクト本体の変更
       .on(
         "postgres_changes",
         {
@@ -309,8 +320,6 @@ export default function ProjectSettingsPage() {
         },
         () => fetchProject(true),
       )
-      // メンバーシップ（Requests）の変更
-      // ここが重要：メンバーの追加・削除・ステータス更新すべてをトリガーにする
       .on(
         "postgres_changes",
         {
@@ -319,12 +328,8 @@ export default function ProjectSettingsPage() {
           table: "project_members",
           filter: `project_id=eq.${params.id}`,
         },
-        () => {
-          console.log("Member change detected, re-fetching...");
-          fetchProject(true);
-        },
+        () => fetchProject(true),
       )
-      // 詳細情報の変更
       .on(
         "postgres_changes",
         {
@@ -336,7 +341,6 @@ export default function ProjectSettingsPage() {
         () => fetchProject(true),
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -386,7 +390,6 @@ export default function ProjectSettingsPage() {
     if (!project) return;
     const newVisibility =
       project.visibility === "public" ? "private" : "public";
-
     modals.openConfirmModal({
       title: `公開設定を ${newVisibility.toUpperCase()} に変更`,
       children: (
@@ -415,19 +418,12 @@ export default function ProjectSettingsPage() {
     fetchProject(true);
   };
 
-  // ProjectSettingsPage 内の handleApprove を修正
   const handleApprove = async (id: string) => {
     const { error } = await supabase
       .from("project_members")
       .update({ status: "approved" })
       .eq("id", id);
-
-    if (error) {
-      console.error("Approve failed:", error);
-    } else {
-      // 成功したらデータを再取得（Realtimeでも更新されますが、念のため）
-      fetchProject(true);
-    }
+    if (!error) fetchProject(true);
   };
 
   const handleReject = async (id: string) => {
@@ -471,6 +467,12 @@ export default function ProjectSettingsPage() {
     project.member_details?.filter((m) => m.status === "pending") ?? [];
   const SelectedIcon = ICON_MAP[overviewForm.values.icon] ?? IconRocket;
 
+  const navItemsWithCount = NAV_ITEMS.map((item) =>
+    item.id === "requests" && pendingMembers.length > 0
+      ? { ...item, label: `Requests (${pendingMembers.length})` }
+      : item,
+  );
+
   return (
     <Box
       bg="#F8FAFB"
@@ -478,8 +480,10 @@ export default function ProjectSettingsPage() {
       style={{ opacity: isPendingUpdate ? 0.9 : 1, transition: "opacity 0.2s" }}
     >
       <DashboardHeader user={user} />
-      <Container size="lg" pt={rem(40)} pb={80}>
-        <Group gap={6} mb={6}>
+
+      <Container size="lg" pt={rem(24)} pb={80} px={{ base: 16, sm: 24 }}>
+        {/* パンくず */}
+        <Group gap={4} mb={8} wrap="nowrap" style={{ overflow: "hidden" }}>
           <Anchor
             size="xs"
             c="dimmed"
@@ -490,36 +494,87 @@ export default function ProjectSettingsPage() {
               display: "flex",
               alignItems: "center",
               gap: 4,
+              flexShrink: 0,
             }}
           >
-            <IconArrowLeft size={13} /> Dashboard
+            <IconArrowLeft size={13} />
+            <Text size="xs" c="dimmed" visibleFrom="xs">
+              Dashboard
+            </Text>
           </Anchor>
-          <Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             /
           </Text>
-          <Anchor
-            size="xs"
-            c="dimmed"
-            underline="never"
-            onClick={() => router.push(`/projects/${project.id}`)}
-            style={{ cursor: "pointer" }}
-          >
+          <Text size="xs" c="dimmed" truncate style={{ maxWidth: rem(120) }}>
             {project.title}
-          </Anchor>
-          <Text size="xs" c="dimmed">
+          </Text>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             /
           </Text>
-          <Text size="xs" fw={500}>
+          <Text size="xs" fw={500} style={{ flexShrink: 0 }}>
             Settings
           </Text>
         </Group>
 
-        <Text fw={600} style={{ fontSize: rem(20) }} mb="xl">
+        <Text fw={600} style={{ fontSize: rem(18) }} mb="md">
           Project Settings
         </Text>
         <Divider mb="xl" color="gray.2" />
 
-        <Group align="flex-start" gap={32} wrap="nowrap">
+        {/* ─── モバイル：横スクロールタブ ─── */}
+        <Box hiddenFrom="sm" mb="md">
+          <ScrollArea scrollbarSize={0}>
+            <Group gap={4} wrap="nowrap" pb={4}>
+              {navItemsWithCount.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeNav === item.id;
+                return (
+                  <Box
+                    key={item.id}
+                    px={12}
+                    py={7}
+                    onClick={() => setActiveNav(item.id)}
+                    style={{
+                      borderRadius: rem(20),
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      fontSize: rem(12),
+                      fontWeight: isActive ? 600 : 400,
+                      background: isActive
+                        ? item.danger
+                          ? "var(--mantine-color-red-1)"
+                          : "var(--mantine-color-dark-9)"
+                        : "var(--mantine-color-gray-1)",
+                      color: isActive
+                        ? item.danger
+                          ? "var(--mantine-color-red-7)"
+                          : "white"
+                        : item.danger
+                          ? "var(--mantine-color-red-6)"
+                          : "var(--mantine-color-gray-7)",
+                      transition: "all 0.15s",
+                      border:
+                        isActive && !item.danger
+                          ? "none"
+                          : item.danger
+                            ? "1px solid var(--mantine-color-red-3)"
+                            : "1px solid transparent",
+                    }}
+                  >
+                    <Group gap={6} wrap="nowrap">
+                      <Icon size={13} />
+                      {item.label}
+                    </Group>
+                  </Box>
+                );
+              })}
+            </Group>
+          </ScrollArea>
+        </Box>
+
+        {/* ─── デスクトップ：サイドナビ + コンテンツ ─── */}
+        <Group align="flex-start" gap={32} wrap="nowrap" visibleFrom="sm">
+          {/* サイドナビ */}
           <Stack gap={2} style={{ width: rem(200), flexShrink: 0 }}>
             <Text
               size="xs"
@@ -594,327 +649,449 @@ export default function ProjectSettingsPage() {
             />
           </Stack>
 
+          {/* デスクトップ コンテンツ */}
           <Box style={{ flex: 1, minWidth: 0 }}>
-            {activeNav === "overview" && (
-              <form
-                id="overview-form"
-                onSubmit={overviewForm.onSubmit(handleSaveOverview)}
+            <SettingsContent
+              activeNav={activeNav}
+              project={project}
+              overviewForm={overviewForm}
+              statusForm={statusForm}
+              tagOptions={tagOptions}
+              saving={saving}
+              savingStatus={savingStatus}
+              approvedMembers={approvedMembers}
+              pendingMembers={pendingMembers}
+              SelectedIcon={SelectedIcon}
+              handleSaveOverview={handleSaveOverview}
+              handleSaveStatus={handleSaveStatus}
+              handleVisibilityChange={handleVisibilityChange}
+              handleUpdatePosition={handleUpdatePosition}
+              handleApprove={handleApprove}
+              handleReject={handleReject}
+              handleDelete={handleDelete}
+            />
+          </Box>
+        </Group>
+
+        {/* ─── モバイル：コンテンツ ─── */}
+        <Box hiddenFrom="sm">
+          <SettingsContent
+            activeNav={activeNav}
+            project={project}
+            overviewForm={overviewForm}
+            statusForm={statusForm}
+            tagOptions={tagOptions}
+            saving={saving}
+            savingStatus={savingStatus}
+            approvedMembers={approvedMembers}
+            pendingMembers={pendingMembers}
+            SelectedIcon={SelectedIcon}
+            handleSaveOverview={handleSaveOverview}
+            handleSaveStatus={handleSaveStatus}
+            handleVisibilityChange={handleVisibilityChange}
+            handleUpdatePosition={handleUpdatePosition}
+            handleApprove={handleApprove}
+            handleReject={handleReject}
+            handleDelete={handleDelete}
+          />
+        </Box>
+      </Container>
+    </Box>
+  );
+}
+
+// ─── コンテンツ部分を共通コンポーネントに抽出 ──────────────────────────────
+interface SettingsContentProps {
+  activeNav: NavSection;
+  project: Project;
+  overviewForm: ReturnType<
+    typeof useForm<{
+      title: string;
+      description: string;
+      icon: string;
+      url: string;
+    }>
+  >;
+  statusForm: ReturnType<
+    typeof useForm<{ status: string; progress: number; tags: string[] }>
+  >;
+  tagOptions: string[];
+  saving: boolean;
+  savingStatus: boolean;
+  approvedMembers: NonNullable<Project["member_details"]>;
+  pendingMembers: NonNullable<Project["member_details"]>;
+  SelectedIcon: React.FC<{ size?: number; stroke?: number }>;
+  handleSaveOverview: (values: any) => void;
+  handleSaveStatus: (values: any) => void;
+  handleVisibilityChange: () => void;
+  handleUpdatePosition: (id: string, pos: string) => void;
+  handleApprove: (id: string) => void;
+  handleReject: (id: string) => void;
+  handleDelete: () => void;
+}
+
+function SettingsContent({
+  activeNav,
+  project,
+  overviewForm,
+  statusForm,
+  tagOptions,
+  saving,
+  savingStatus,
+  approvedMembers,
+  pendingMembers,
+  SelectedIcon,
+  handleSaveOverview,
+  handleSaveStatus,
+  handleVisibilityChange,
+  handleUpdatePosition,
+  handleApprove,
+  handleReject,
+  handleDelete,
+}: SettingsContentProps) {
+  return (
+    <>
+      {activeNav === "overview" && (
+        <form
+          id="overview-form"
+          onSubmit={overviewForm.onSubmit(handleSaveOverview)}
+        >
+          <Section
+            title="General"
+            footer={
+              <Button
+                type="submit"
+                form="overview-form"
+                size="xs"
+                radius="md"
+                loading={saving}
+                style={{ background: "#1f883d", fontWeight: 500 }}
               >
-                <Section
-                  title="General"
-                  footer={
-                    <Button
-                      type="submit"
-                      form="overview-form"
-                      size="xs"
-                      radius="md"
-                      loading={saving}
-                      style={{ background: "#1f883d", fontWeight: 500 }}
-                    >
-                      Save changes
-                    </Button>
-                  }
-                >
-                  <Stack gap={16}>
-                    <Group grow align="flex-end">
-                      <TextInput
-                        label="Project Name"
-                        required
-                        styles={fieldStyles}
-                        {...overviewForm.getInputProps("title")}
-                      />
-                      <Select
-                        label="Icon"
-                        data={ICON_OPTIONS}
-                        allowDeselect={false}
-                        styles={fieldStyles}
-                        leftSection={<SelectedIcon size={14} />}
-                        renderOption={({ option }) => {
-                          const Icon = ICON_MAP[option.value];
-                          return (
-                            <Group gap={8}>
-                              {Icon && <Icon size={14} />}
-                              <Text size="sm">{option.label}</Text>
-                            </Group>
-                          );
-                        }}
-                        {...overviewForm.getInputProps("icon")}
-                      />
-                    </Group>
-                    <Textarea
-                      label="Description"
-                      placeholder="Project goals..."
-                      minRows={4}
-                      autosize
-                      maxRows={8}
-                      styles={fieldStyles}
-                      {...overviewForm.getInputProps("description")}
-                    />
-                    <TextInput
-                      label="Website"
-                      leftSection={
-                        <IconLink
-                          size={14}
-                          color="var(--mantine-color-gray-5)"
-                        />
-                      }
-                      styles={fieldStyles}
-                      {...overviewForm.getInputProps("url")}
-                    />
-                  </Stack>
-                </Section>
-              </form>
-            )}
-
-            {activeNav === "status" && (
-              <form
-                id="status-form"
-                onSubmit={statusForm.onSubmit(handleSaveStatus)}
+                Save changes
+              </Button>
+            }
+          >
+            <Stack gap={16}>
+              {/* モバイルでは縦積み、デスクトップでは横並び */}
+              <Box
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr",
+                  gap: rem(12),
+                }}
+                className="overview-grid"
               >
-                <Section
-                  title="Status & Progress"
-                  footer={
-                    <Button
-                      type="submit"
-                      form="status-form"
-                      size="xs"
-                      radius="md"
-                      loading={savingStatus}
-                      style={{ background: "#1f883d", fontWeight: 500 }}
-                    >
-                      Save changes
-                    </Button>
-                  }
-                >
-                  <Stack gap={16}>
-                    <Group grow>
-                      <Select
-                        label="Status"
-                        data={STATUS_OPTIONS}
-                        allowDeselect={false}
-                        styles={fieldStyles}
-                        {...statusForm.getInputProps("status")}
-                      />
-                      <NumberInput
-                        label="Progress"
-                        suffix="%"
-                        min={0}
-                        max={100}
-                        step={5}
-                        styles={fieldStyles}
-                        {...statusForm.getInputProps("progress")}
-                      />
-                    </Group>
-                    <MultiSelect
-                      label="Technology Tags"
-                      data={tagOptions}
-                      searchable
-                      clearable
-                      hidePickedOptions
-                      styles={fieldStyles}
-                      {...statusForm.getInputProps("tags")}
-                    />
-                  </Stack>
-                </Section>
-              </form>
-            )}
-
-            {activeNav === "team" && (
-              <Section title="Team Members">
-                <Stack gap={0}>
-                  {approvedMembers.map((m, i) => (
-                    <Group
-                      key={m.user_id}
-                      justify="space-between"
-                      py={12}
-                      wrap="nowrap"
-                      style={{
-                        borderBottom:
-                          i < approvedMembers.length - 1
-                            ? "1px solid var(--mantine-color-gray-1)"
-                            : "none",
-                      }}
-                    >
-                      <Group gap={12} style={{ flex: 1 }}>
-                        <Avatar
-                          src={m.avatar_url}
-                          size={32}
-                          radius="xl"
-                          name={m.username ?? undefined}
-                        />
-                        <Box>
-                          <Text size="sm" fw={600}>
-                            {m.username}
-                          </Text>
-                          <Text size="xs" c="dimmed">
-                            {m.role === "owner" ? "Owner" : "Member"}
-                          </Text>
-                        </Box>
+                <TextInput
+                  label="Project Name"
+                  required
+                  styles={fieldStyles}
+                  {...overviewForm.getInputProps("title")}
+                />
+                <Select
+                  label="Icon"
+                  data={ICON_OPTIONS}
+                  allowDeselect={false}
+                  styles={fieldStyles}
+                  leftSection={<SelectedIcon size={14} />}
+                  renderOption={({ option }) => {
+                    const Icon = ICON_MAP[option.value];
+                    return (
+                      <Group gap={8}>
+                        {Icon && <Icon size={14} />}
+                        <Text size="sm">{option.label}</Text>
                       </Group>
-                      <Group gap={8} wrap="nowrap">
-                        <Select
-                          size="xs"
-                          data={POSITION_OPTIONS}
-                          value={m.position ?? null}
-                          placeholder="Position"
-                          onChange={(v) => v && handleUpdatePosition(m.id, v)}
-                          radius="xl"
-                          styles={{
-                            input: {
-                              width: rem(130),
-                              fontSize: rem(11),
-                              fontWeight: 600,
-                              backgroundColor: "var(--mantine-color-gray-1)",
-                              border: "none",
-                              height: rem(26),
-                              minHeight: rem(26),
-                            },
-                          }}
-                        />
-                        <Box
-                          style={{
-                            width: rem(28),
-                            display: "flex",
-                            justifyContent: "center",
-                          }}
-                        >
-                          {m.user_id === project.owner_id ? (
-                            <Tooltip label="Owner" withArrow>
-                              <IconCrown
-                                size={16}
-                                color="var(--mantine-color-orange-5)"
-                              />
-                            </Tooltip>
-                          ) : (
-                            <ActionIcon
-                              variant="subtle"
-                              color="gray"
-                              size="sm"
-                              onClick={() => handleReject(m.id)}
-                            >
-                              <IconX size={16} />
-                            </ActionIcon>
-                          )}
-                        </Box>
-                      </Group>
-                    </Group>
-                  ))}
-                </Stack>
-              </Section>
-            )}
+                    );
+                  }}
+                  {...overviewForm.getInputProps("icon")}
+                />
+              </Box>
+              <Textarea
+                label="Description"
+                placeholder="Project goals..."
+                minRows={4}
+                autosize
+                maxRows={8}
+                styles={fieldStyles}
+                {...overviewForm.getInputProps("description")}
+              />
+              <TextInput
+                label="Website"
+                leftSection={
+                  <IconLink size={14} color="var(--mantine-color-gray-5)" />
+                }
+                styles={fieldStyles}
+                {...overviewForm.getInputProps("url")}
+              />
+            </Stack>
+          </Section>
+        </form>
+      )}
 
-            {activeNav === "requests" && (
-              <Section title={`Pending Requests (${pendingMembers.length})`}>
-                {pendingMembers.length === 0 ? (
-                  <Text size="sm" c="dimmed" ta="center" py="xl">
-                    No pending requests
-                  </Text>
-                ) : (
-                  <Stack gap={0}>
-                    {pendingMembers.map((m, i) => (
-                      <Group
-                        key={m.user_id}
-                        justify="space-between"
-                        py={12}
-                        style={{
-                          borderBottom:
-                            i < pendingMembers.length - 1
-                              ? "1px solid var(--mantine-color-gray-1)"
-                              : "none",
-                        }}
+      {activeNav === "status" && (
+        <form id="status-form" onSubmit={statusForm.onSubmit(handleSaveStatus)}>
+          <Section
+            title="Status & Progress"
+            footer={
+              <Button
+                type="submit"
+                form="status-form"
+                size="xs"
+                radius="md"
+                loading={savingStatus}
+                style={{ background: "#1f883d", fontWeight: 500 }}
+              >
+                Save changes
+              </Button>
+            }
+          >
+            <Stack gap={16}>
+              <Box
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: rem(12),
+                }}
+              >
+                <Select
+                  label="Status"
+                  data={STATUS_OPTIONS}
+                  allowDeselect={false}
+                  styles={fieldStyles}
+                  {...statusForm.getInputProps("status")}
+                />
+                <NumberInput
+                  label="Progress"
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  step={5}
+                  styles={fieldStyles}
+                  {...statusForm.getInputProps("progress")}
+                />
+              </Box>
+              <MultiSelect
+                label="Technology Tags"
+                data={tagOptions}
+                searchable
+                clearable
+                hidePickedOptions
+                styles={fieldStyles}
+                {...statusForm.getInputProps("tags")}
+              />
+            </Stack>
+          </Section>
+        </form>
+      )}
+
+      {activeNav === "team" && (
+        <Section title="Team Members">
+          <Stack gap={0}>
+            {approvedMembers.map((m, i) => (
+              <Group
+                key={m.user_id}
+                justify="space-between"
+                py={12}
+                wrap="nowrap"
+                style={{
+                  borderBottom:
+                    i < approvedMembers.length - 1
+                      ? "1px solid var(--mantine-color-gray-1)"
+                      : "none",
+                }}
+              >
+                <Group gap={10} style={{ flex: 1, minWidth: 0 }}>
+                  <Avatar
+                    src={m.avatar_url}
+                    size={32}
+                    radius="xl"
+                    name={m.username ?? undefined}
+                    style={{ flexShrink: 0 }}
+                  />
+                  <Box style={{ minWidth: 0 }}>
+                    <Text size="sm" fw={600} truncate>
+                      {m.username}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {m.role === "owner" ? "Owner" : "Member"}
+                    </Text>
+                  </Box>
+                </Group>
+                <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
+                  <Select
+                    size="xs"
+                    data={POSITION_OPTIONS}
+                    value={m.position ?? null}
+                    placeholder="Position"
+                    onChange={(v) => v && handleUpdatePosition(m.id, v)}
+                    radius="xl"
+                    styles={{
+                      input: {
+                        width: rem(110),
+                        fontSize: rem(11),
+                        fontWeight: 600,
+                        backgroundColor: "var(--mantine-color-gray-1)",
+                        border: "none",
+                        height: rem(26),
+                        minHeight: rem(26),
+                      },
+                    }}
+                  />
+                  <Box
+                    style={{
+                      width: rem(28),
+                      display: "flex",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {m.user_id === project.owner_id ? (
+                      <Tooltip label="Owner" withArrow>
+                        <IconCrown
+                          size={16}
+                          color="var(--mantine-color-orange-5)"
+                        />
+                      </Tooltip>
+                    ) : (
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        size="sm"
+                        onClick={() => handleReject(m.id)}
                       >
-                        <Group gap={12}>
-                          <Avatar
-                            src={m.avatar_url}
-                            size={30}
-                            radius="xl"
-                            name={m.username ?? undefined}
-                          />
-                          <Text size="sm" fw={600}>
-                            {m.username}
-                          </Text>
-                        </Group>
-                        <Group gap={6}>
-                          <Button
-                            variant="light"
-                            color="blue"
-                            size="xs"
-                            radius="md"
-                            leftSection={<IconCheck size={13} />}
-                            onClick={() => handleApprove(m.id)}
-                            styles={{ root: { fontWeight: 500 } }}
-                          >
-                            Approve
-                          </Button>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            radius="md"
-                            onClick={() => handleReject(m.id)}
-                          >
-                            <IconX size={14} />
-                          </ActionIcon>
-                        </Group>
-                      </Group>
-                    ))}
-                  </Stack>
-                )}
-              </Section>
-            )}
+                        <IconX size={16} />
+                      </ActionIcon>
+                    )}
+                  </Box>
+                </Group>
+              </Group>
+            ))}
+          </Stack>
+        </Section>
+      )}
 
-            {activeNav === "danger" && (
-              <Stack gap="xl">
-                <Section title="Change Project Visibility">
-                  <Group justify="space-between">
-                    <Box>
-                      <Text size="sm" fw={600}>
-                        This project is currently {project.visibility}.
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        公開範囲を変更すると、リサーチやコラボレーターへの影響が出る場合があります。
-                      </Text>
-                    </Box>
-                    <Button
-                      variant="outline"
-                      color="dark"
-                      size="xs"
-                      onClick={handleVisibilityChange}
-                    >
-                      Change to{" "}
-                      {project.visibility === "public" ? "Private" : "Public"}
-                    </Button>
+      {activeNav === "requests" && (
+        <Section title={`Pending Requests (${pendingMembers.length})`}>
+          {pendingMembers.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center" py="xl">
+              No pending requests
+            </Text>
+          ) : (
+            <Stack gap={0}>
+              {pendingMembers.map((m, i) => (
+                <Group
+                  key={m.user_id}
+                  justify="space-between"
+                  py={12}
+                  wrap="nowrap"
+                  style={{
+                    borderBottom:
+                      i < pendingMembers.length - 1
+                        ? "1px solid var(--mantine-color-gray-1)"
+                        : "none",
+                  }}
+                >
+                  <Group gap={10} style={{ flex: 1, minWidth: 0 }}>
+                    <Avatar
+                      src={m.avatar_url}
+                      size={30}
+                      radius="xl"
+                      name={m.username ?? undefined}
+                      style={{ flexShrink: 0 }}
+                    />
+                    <Text size="sm" fw={600} truncate>
+                      {m.username}
+                    </Text>
                   </Group>
-                </Section>
-
-                <Section title="Delete Project" danger>
-                  <Group justify="space-between" align="flex-start">
-                    <Box>
-                      <Text size="sm" fw={600} mb={4}>
-                        Delete this project
-                      </Text>
-                      <Text size="xs" c="dimmed" style={{ maxWidth: rem(400) }}>
-                        プロジェクトを削除すると元に戻せません。慎重に実行してください。
-                      </Text>
-                    </Box>
+                  <Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}>
                     <Button
-                      variant="outline"
+                      variant="light"
+                      color="blue"
+                      size="xs"
+                      radius="md"
+                      leftSection={<IconCheck size={13} />}
+                      onClick={() => handleApprove(m.id)}
+                      styles={{ root: { fontWeight: 500 } }}
+                    >
+                      Approve
+                    </Button>
+                    <ActionIcon
+                      variant="subtle"
                       color="red"
                       size="sm"
                       radius="md"
-                      leftSection={<IconTrash size={14} />}
-                      onClick={handleDelete}
-                      styles={{ root: { fontWeight: 500 } }}
+                      onClick={() => handleReject(m.id)}
                     >
-                      Delete Project
-                    </Button>
+                      <IconX size={14} />
+                    </ActionIcon>
                   </Group>
-                </Section>
-              </Stack>
-            )}
-          </Box>
-        </Group>
-      </Container>
-    </Box>
+                </Group>
+              ))}
+            </Stack>
+          )}
+        </Section>
+      )}
+
+      {activeNav === "danger" && (
+        <Stack gap="xl">
+          <Section title="Change Project Visibility">
+            <Stack gap={12}>
+              <Box>
+                <Text size="sm" fw={600}>
+                  This project is currently {project.visibility}.
+                </Text>
+                <Text size="xs" c="dimmed" mt={4}>
+                  公開範囲を変更すると、リサーチやコラボレーターへの影響が出る場合があります。
+                </Text>
+              </Box>
+              <Box>
+                <Button
+                  variant="outline"
+                  color="dark"
+                  size="xs"
+                  onClick={handleVisibilityChange}
+                  fullWidth={false}
+                >
+                  Change to{" "}
+                  {project.visibility === "public" ? "Private" : "Public"}
+                </Button>
+              </Box>
+            </Stack>
+          </Section>
+
+          <Section title="Delete Project" danger>
+            <Stack gap={12}>
+              <Box>
+                <Text size="sm" fw={600} mb={4}>
+                  Delete this project
+                </Text>
+                <Text size="xs" c="dimmed">
+                  プロジェクトを削除すると元に戻せません。慎重に実行してください。
+                </Text>
+              </Box>
+              <Box>
+                <Button
+                  variant="outline"
+                  color="red"
+                  size="sm"
+                  radius="md"
+                  leftSection={<IconTrash size={14} />}
+                  onClick={handleDelete}
+                  styles={{ root: { fontWeight: 500 } }}
+                >
+                  Delete Project
+                </Button>
+              </Box>
+            </Stack>
+          </Section>
+        </Stack>
+      )}
+
+      <style>{`
+        @media (min-width: 640px) {
+          .overview-grid {
+            grid-template-columns: 1fr 1fr !important;
+          }
+        }
+      `}</style>
+    </>
   );
 }

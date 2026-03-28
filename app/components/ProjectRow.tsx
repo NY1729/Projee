@@ -15,7 +15,6 @@ import {
   ThemeIcon,
 } from "@mantine/core";
 import {
-  IconPlus,
   IconUserPlus,
   IconUserMinus,
   IconUserCheck,
@@ -29,11 +28,7 @@ import { Project } from "../types/project";
 import { User } from "@supabase/supabase-js";
 import { notify } from "@/lib/notify";
 import { modals } from "@mantine/modals";
-import {
-  ICON_MAP,
-  STATUS_THEMES,
-  DASHBOARD_GRID_COLS,
-} from "@/app/constants/project";
+import { ICON_MAP, STATUS_THEMES } from "@/app/constants/project";
 
 export const ProjectRow = ({
   proj,
@@ -47,7 +42,6 @@ export const ProjectRow = ({
   const router = useRouter();
   const members = proj.member_details ?? [];
 
-  // 認証情報の判定
   const isApproved = members.some(
     (m) => m.user_id === currentUser?.id && m.status === "approved",
   );
@@ -56,14 +50,12 @@ export const ProjectRow = ({
   );
   const isOwner = proj.owner_id === currentUser?.id;
 
-  // 定数からのテーマ取得
   const ProjectIcon =
     ICON_MAP[proj.icon as keyof typeof ICON_MAP] || ICON_MAP.IconRocket;
   const theme =
     STATUS_THEMES[proj.status as keyof typeof STATUS_THEMES] ||
     STATUS_THEMES.Planning;
 
-  // 参加・退出アクションのハンドラ
   const handleAction = async (
     e: React.MouseEvent,
     action: "join" | "cancel" | "leave",
@@ -114,150 +106,198 @@ export const ProjectRow = ({
   };
 
   return (
-    <Box
-      onClick={() => router.push(`/projects/${proj.id}`)}
-      px="md"
-      py="md"
-      style={{
-        display: "grid",
-        gridTemplateColumns: DASHBOARD_GRID_COLS,
-        gap: "16px",
-        alignItems: "center",
-        borderBottom: "1px solid #f1f3f5",
-        cursor: "pointer",
-        transition: "background 0.2s ease",
-      }}
-      className="project-row-item"
-    >
-      {/* 1. PROJECT: アイコンとタイトル */}
-      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
-        <ThemeIcon
-          variant="light"
-          color={proj.visibility === "private" ? "gray" : "blue"}
-          size={38}
-          radius="md"
-        >
-          <ProjectIcon size={20} />
-        </ThemeIcon>
-        <Stack gap={0} style={{ minWidth: 0 }}>
-          <Group gap={4} wrap="nowrap">
-            {proj.visibility === "private" && (
-              <IconLock size={12} color="gray" />
-            )}
-            <Text fw={600} size="sm" truncate>
-              {proj.title}
+    <>
+      <Box
+        onClick={() => router.push(`/projects/${proj.id}`)}
+        className="project-row-container"
+      >
+        {/* 1. PROJECT: メイン情報 */}
+        <Group gap="sm" wrap="nowrap" className="grid-project">
+          <ThemeIcon
+            variant="light"
+            color={proj.visibility === "private" ? "gray" : "blue"}
+            size={40}
+            radius="md"
+            className="flex-shrink-0"
+          >
+            <ProjectIcon size={22} />
+          </ThemeIcon>
+          <Box style={{ flex: 1, minWidth: 0 }}>
+            <Group gap={6} wrap="nowrap">
+              {proj.visibility === "private" && (
+                <IconLock size={14} color="gray" />
+              )}
+              <Text fw={600} size="sm" truncate>
+                {proj.title}
+              </Text>
+            </Group>
+          </Box>
+        </Group>
+
+        {/* 2. STATUS */}
+        <Box className="grid-status">
+          <Badge variant="dot" color={theme.color} size="sm">
+            {theme.label}
+          </Badge>
+        </Box>
+
+        {/* 3. PROGRESS */}
+        <Box className="grid-progress">
+          <Group justify="space-between" mb={4} visibleFrom="sm">
+            <Text size="xs" fw={800} c="dimmed">
+              Progress
             </Text>
           </Group>
-        </Stack>
-      </Group>
+          <Stack gap={2}>
+            <Text size="xs" fw={800} ta="right" className="progress-text">
+              {proj.progress}%
+            </Text>
+            <Progress
+              value={proj.progress}
+              size="xs"
+              color={theme.color}
+              radius="xl"
+            />
+          </Stack>
+        </Box>
 
-      {/* 2. STATUS: バッジ */}
-      <Badge variant="dot" color={theme.color} size="sm">
-        {theme.label}
-      </Badge>
+        {/* 4. TAGS */}
+        <Box className="grid-tags">
+          <Box visibleFrom="sm" mb={4}>
+            <Text size="xs" fw={800} c="dimmed">
+              Tags
+            </Text>
+          </Box>
 
-      {/* 3. PROGRESS: 進捗バー */}
-      <Stack gap={4}>
-        <Text size="xs" fw={700} ta="right">
-          {proj.progress}%
-        </Text>
-        <Progress value={proj.progress} size="xs" color={theme.color} />
-      </Stack>
-
-      {/* 4. TAGS: 技術スタック */}
-      <Group gap={4} wrap="wrap" style={{ minWidth: 0 }}>
-        {proj.tags?.map((tag) => (
-          <Badge
-            key={tag}
-            variant="outline"
-            color="gray"
-            size="xs"
-            leftSection={<IconHash size={10} />}
-            style={{ textTransform: "none" }} // 大文字強制を解除（Next.jsなどの表記を維持）
-          >
-            {tag}
-          </Badge>
-        ))}
-      </Group>
-      {/* 5. TEAM: メンバーアバター（リアルタイム反映対応） */}
-      <Avatar.Group spacing="xs">
-        {members
-          .filter((m) => m.status === "approved")
-          .slice(0, 3)
-          .map((m) => (
-            <Tooltip key={m.user_id} label={m.username} withArrow>
-              <Avatar
-                src={m.avatar_url}
-                // URL（ファイル名）が変更された際にコンポーネントを強制再描画させる
-                key={m.avatar_url}
-                size={26}
-                radius="xl"
-                name={m.username ?? undefined}
-              />
-            </Tooltip>
-          ))}
-      </Avatar.Group>
-
-      {/* 6. ACTIONS */}
-      <Group justify="flex-end">
-        {currentUser && !isOwner && (
-          <Box onClick={(e) => e.stopPropagation()}>
-            {isApproved ? (
-              <Button
-                variant="light"
-                color="red"
-                size="xs"
-                radius="md"
-                leftSection={<IconUserMinus size={14} />}
-                onClick={(e) => handleAction(e, "leave")}
-                styles={{ root: { width: rem(85) } }}
-              >
-                退出
-              </Button>
-            ) : isPending ? (
-              <Button
-                variant="light"
+          <Group gap={4} wrap="wrap">
+            {proj.tags?.map((tag) => (
+              <Badge
+                key={tag}
+                variant="outline"
                 color="gray"
                 size="xs"
-                radius="md"
-                leftSection={<IconUserCheck size={14} />}
-                onClick={(e) => handleAction(e, "cancel")}
-                styles={{ root: { width: rem(85) } }}
+                leftSection={<IconHash size={10} />}
+                style={{ textTransform: "none" }}
               >
-                申請中
-              </Button>
-            ) : (
+                {tag}
+              </Badge>
+            ))}
+          </Group>
+        </Box>
+
+        {/* 5. TEAM */}
+        <Box className="grid-team">
+          <Group justify="space-between" mb={4} visibleFrom="sm">
+            <Text size="xs" fw={800} c="dimmed">
+              Members
+            </Text>
+          </Group>
+          <Avatar.Group spacing="xs">
+            {members
+              .filter((m) => m.status === "approved")
+              .slice(0, 3)
+              .map((m) => (
+                <Tooltip key={m.user_id} label={m.username} withArrow>
+                  <Avatar
+                    src={m.avatar_url}
+                    key={m.avatar_url}
+                    size={28}
+                    radius="xl"
+                  />
+                </Tooltip>
+              ))}
+          </Avatar.Group>
+        </Box>
+
+        {/* 6. ACTIONS */}
+        <Group justify="flex-end" className="grid-actions">
+          {currentUser && !isOwner && (
+            <Box onClick={(e) => e.stopPropagation()}>
               <Button
                 variant="light"
-                color="blue"
+                color={isApproved ? "red" : isPending ? "gray" : "blue"}
                 size="xs"
                 radius="md"
-                leftSection={<IconUserPlus size={14} />}
-                onClick={(e) => handleAction(e, "join")}
-                styles={{ root: { width: rem(85) } }}
+                leftSection={
+                  isApproved ? (
+                    <IconUserMinus size={14} />
+                  ) : isPending ? (
+                    <IconUserCheck size={14} />
+                  ) : (
+                    <IconUserPlus size={14} />
+                  )
+                }
+                onClick={(e) =>
+                  handleAction(
+                    e,
+                    isApproved ? "leave" : isPending ? "cancel" : "join",
+                  )
+                }
+                className="action-button"
               >
-                参加
+                {isApproved ? "退出" : isPending ? "申請中" : "参加"}
               </Button>
-            )}
-          </Box>
-        )}
-        {isOwner && onEdit && (
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(proj);
-            }}
-          >
-            <IconPencil size={16} />
-          </ActionIcon>
-        )}
-      </Group>
+            </Box>
+          )}
+          {isOwner && onEdit && (
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(proj);
+              }}
+            >
+              <IconPencil size={18} />
+            </ActionIcon>
+          )}
+        </Group>
+      </Box>
 
       <style>{`
-        .project-row-item:hover { background-color: #fcfcfd; }
+        /* ベーススタイル (スマホ) */
+        .project-row-container {
+          display: grid;
+          padding: ${rem(16)};
+          gap: ${rem(12)};
+          border-bottom: 1px solid #f1f3f5;
+          cursor: pointer;
+          transition: background 0.2s ease;
+          /* スマホでは2列レイアウト */
+          grid-template-columns: 1fr auto;
+        }
+
+        .project-row-container:hover { background-color: #fcfcfd; }
+
+        .grid-project { grid-column: 1; min-width: 0; }
+        .grid-status { grid-column: 2; align-self: center; }
+        .grid-progress { grid-column: 1 / span 2; }
+        .grid-tags { grid-column: 1 / span 2; }
+        .grid-team { grid-column: 1; align-self: center; }
+        .grid-actions { grid-column: 2; align-self: center; }
+
+        .action-button { width: ${rem(85)}; }
+
+        /* PC用 (768px以上) */
+        @media (min-width: 768px) {
+          .project-row-container {
+            /* 以前の DASHBOARD_GRID_COLS に相当する横並び設定 */
+            grid-template-columns: 1.2fr 100px 1.2fr 1.8fr 100px 110px;
+            gap: ${rem(16)};
+          }
+          
+          /* PCでは全要素を1行に */
+          .grid-project, .grid-status, .grid-progress, 
+          .grid-tags, .grid-team, .grid-actions {
+            grid-column: auto !important;
+          }
+
+          .progress-text { margin-bottom: 0; }
+        }
+
+        .flex-shrink-0 { flex-shrink: 0; }
       `}</style>
-    </Box>
+    </>
   );
 };

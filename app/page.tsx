@@ -12,13 +12,8 @@ import {
   Paper,
   Skeleton,
   rem,
+  Center,
 } from "@mantine/core";
-import {
-  IconActivity,
-  IconRocket,
-  IconUsers,
-  IconHeartHandshake,
-} from "@tabler/icons-react";
 import { supabase } from "@/lib/supabase";
 import { DashboardHeader } from "./components/DashboardHeader";
 import { StatCard } from "./components/StatCard";
@@ -26,9 +21,6 @@ import { ProjectRow } from "./components/ProjectRow";
 import { Project } from "./types/project";
 import { useAuth } from "./hooks/useAuth";
 import { LoginForm } from "./components/LoginForm";
-import { DASHBOARD_GRID_COLS } from "./constants/project";
-
-const COL_LABELS = ["PROJECT", "STATUS", "PROGRESS", "TAGS", "TEAM", ""];
 
 export default function ProjeeDashboard() {
   const { user, loading: authLoading } = useAuth();
@@ -38,6 +30,7 @@ export default function ProjeeDashboard() {
   const [activeTab, setActiveTab] = useState<string | null>("all");
   const hasInitialized = useRef(false);
 
+  // データ取得ロジック (変更なし)
   const fetchUserCount = useCallback(async () => {
     const { count } = await supabase
       .from("profiles")
@@ -62,64 +55,50 @@ export default function ProjeeDashboard() {
     setLoading(false);
   }, [user?.id]);
 
-  // 1. 初回のデータ取得
   useEffect(() => {
     if (!user || hasInitialized.current) return;
-
-    // 非同期実行を明示的に即時実行関数 (IIFE) で包む
     const init = async () => {
       hasInitialized.current = true;
       await Promise.all([fetchProjects(), fetchUserCount()]);
     };
-
     init();
   }, [user, fetchProjects, fetchUserCount]);
 
-  // 2. リアルタイム購読
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel("dashboard-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "projects" },
-        () => {
-          fetchProjects();
-        }, // 直接呼ぶのではなく関数でラップ
+        () => fetchProjects(),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "project_members" },
-        () => {
-          fetchProjects();
-        },
+        () => fetchProjects(),
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "profiles" },
-        () => {
-          fetchUserCount();
-        },
+        () => fetchUserCount(),
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [user, fetchProjects, fetchUserCount]);
 
   if (authLoading) return null;
+
+  // 1. 未ログイン時のレスポンシブ対応
   if (!user)
     return (
-      <Box
-        bg="#F8FAFB"
-        mih="100vh"
-        display="flex"
-        style={{ alignItems: "center", justifyContent: "center" }}
-      >
-        <LoginForm />
-      </Box>
+      <Center bg="#F8FAFB" mih="100vh" p="md">
+        <Box style={{ width: "100%", maxWidth: rem(800) }}>
+          <LoginForm />
+        </Box>
+      </Center>
     );
 
   const filtered = projects.filter((p) => {
@@ -131,8 +110,14 @@ export default function ProjeeDashboard() {
   return (
     <Box bg="#FBFCFD" mih="100vh">
       <DashboardHeader user={user} />
-      <Container size="lg" pt={40} pb={80}>
-        <SimpleGrid cols={{ base: 1, sm: 3 }} mb={50} spacing="xl">
+
+      <Container size="lg" pt={{ base: 20, sm: 40 }} pb={80}>
+        {/* 2. 統計カード: スマホでは1列、タブレット以上で3列 */}
+        <SimpleGrid
+          cols={{ base: 1, xs: 2, sm: 3 }}
+          mb={{ base: 30, sm: 50 }}
+          spacing="md"
+        >
           <StatCard
             label="進行中"
             val={String(
@@ -152,7 +137,8 @@ export default function ProjeeDashboard() {
           />
         </SimpleGrid>
 
-        <Group justify="space-between" mb="md" align="flex-end">
+        {/* 3. フィルターとLIVE UPDATES: スマホでは縦並びを許容 */}
+        <Group justify="space-between" mb="md" align="center">
           <Tabs
             value={activeTab}
             onChange={setActiveTab}
@@ -161,18 +147,13 @@ export default function ProjeeDashboard() {
             color="dark"
           >
             <Tabs.List>
-              <Tabs.Tab value="all" px="lg">
-                すべて
-              </Tabs.Tab>
-              <Tabs.Tab value="recruiting" px="lg">
-                募集中
-              </Tabs.Tab>
-              <Tabs.Tab value="active" px="lg">
-                進行中
-              </Tabs.Tab>
+              <Tabs.Tab value="all">すべて</Tabs.Tab>
+              <Tabs.Tab value="recruiting">募集中</Tabs.Tab>
+              <Tabs.Tab value="active">進行中</Tabs.Tab>
             </Tabs.List>
           </Tabs>
-          <Group gap={8} style={{ paddingBottom: 8 }}>
+
+          <Group gap={8} visibleFrom="xs">
             <Box
               style={{
                 width: 8,
@@ -193,31 +174,26 @@ export default function ProjeeDashboard() {
           shadow="sm"
           style={{ overflow: "hidden", borderColor: "#eef1f4" }}
         >
-          <Box
-            px="md"
-            py={12}
-            bg="#fcfcfd"
-            visibleFrom="md"
-            style={{
-              display: "grid",
-              gridTemplateColumns: DASHBOARD_GRID_COLS,
-              gap: "16px",
-              borderBottom: "1px solid #f1f3f5",
-            }}
-          >
-            {COL_LABELS.map((l, i) => (
-              <Text key={i} size="xs" fw={700} c="gray.5">
-                {l}
-              </Text>
-            ))}
-          </Box>
           <Stack gap={0}>
             {loading ? (
-              <Skeleton height={200} radius="md" />
-            ) : (
+              <Box p="md">
+                <Skeleton height={200} radius="md" />
+              </Box>
+            ) : filtered.length > 0 ? (
               filtered.map((proj) => (
                 <ProjectRow key={proj.id} proj={proj} currentUser={user} />
               ))
+            ) : (
+              <Center py={60} px="md">
+                <Stack align="center" gap="xs">
+                  <Text fw={600} c="dimmed">
+                    表示できるプロジェクトがありません
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    新しいプロジェクトを作成してみましょう！
+                  </Text>
+                </Stack>
+              </Center>
             )}
           </Stack>
         </Paper>
