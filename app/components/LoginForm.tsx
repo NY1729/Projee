@@ -1,10 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Box, Button, Text, Stack, rem } from "@mantine/core";
+import { Box, Button, Text, Stack, rem, Anchor } from "@mantine/core";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { Anchor } from "@mantine/core";
 
 const OAUTH_PROVIDERS = [
   {
@@ -80,9 +79,6 @@ const OAuthButton = ({
         justifyContent: "center",
         paddingInline: rem(16),
         backgroundColor: "var(--mantine-color-white)",
-        "&:hover": {
-          backgroundColor: "var(--mantine-color-gray-0)",
-        },
       },
       section: { marginRight: rem(12) },
     }}
@@ -103,134 +99,166 @@ export const LoginForm = () => {
   };
 
   return (
-    <Box
-      style={{
-        display: "grid",
-        gridTemplateColumns: "clamp(0px, 40%, 400px) 1fr",
-        minHeight: rem(520),
-        border: "1px solid var(--mantine-color-gray-2)",
-        borderRadius: "var(--mantine-radius-lg)",
-        overflow: "hidden",
-        backgroundColor: "var(--mantine-color-white)",
-        boxShadow: "var(--mantine-shadow-md)",
-      }}
-    >
-      {/* ── 左パネル (ダーク) ── */}
+    <>
       <Box
-        style={{
-          background: "#0f0f0f",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: rem(40),
-        }}
-      >
-        <Box style={{ display: "flex", alignItems: "center", gap: rem(8) }}>
-          <Box
-            style={{
-              width: rem(10),
-              height: rem(10),
-              borderRadius: "50%",
-              background: "#fff",
-            }}
-          />
-          <Text fw={600} style={{ color: "#fff", letterSpacing: rem(1) }}>
-            PROJEE
-          </Text>
-        </Box>
-
-        <Box>
-          <Text
-            fw={500}
-            style={{
-              fontSize: rem(28),
-              lineHeight: 1.3,
-              color: "#fff",
-              marginBottom: rem(16),
-            }}
-          >
-            サークルの
-            <br />
-            プロジェクトを
-            <br />
-            一箇所で。
-          </Text>
-          <Text style={{ color: "#888", lineHeight: 1.7, fontSize: rem(14) }}>
-            進捗・メンバー・募集状況を
-            <br />
-            リアルタイムで把握できます。
-          </Text>
-        </Box>
-
-        <Text size="xs" style={{ color: "#444" }}>
-          © 2026 Projee
-        </Text>
-      </Box>
-
-      {/* ── 右パネル (ログイン) ── */}
-      <Box
+        className="login-container"
         style={{
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: rem(48),
+          minHeight: rem(520),
+          border: "1px solid var(--mantine-color-gray-2)",
+          borderRadius: "var(--mantine-radius-lg)",
+          overflow: "hidden",
+          backgroundColor: "var(--mantine-color-white)",
+          boxShadow: "var(--mantine-shadow-md)",
         }}
       >
-        <Box style={{ width: "100%", maxWidth: rem(320) }}>
-          <Stack gap={rem(4)} mb={rem(32)} ta="center">
-            <Text fw={600} style={{ fontSize: rem(24) }}>
-              Welcome back
+        {/* ── 左パネル (ダーク) ── */}
+        <Box
+          className="login-left-panel"
+          style={{
+            background: "#0f0f0f",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            padding: rem(32),
+          }}
+        >
+          <Box style={{ display: "flex", alignItems: "center", gap: rem(8) }}>
+            <Box
+              style={{
+                width: rem(10),
+                height: rem(10),
+                borderRadius: "50%",
+                background: "#fff",
+              }}
+            />
+            <Text fw={600} style={{ color: "#fff", letterSpacing: rem(1) }}>
+              PROJEE
             </Text>
-            <Text c="dimmed" size="sm">
-              アカウントを選択してログインしてください
+          </Box>
+
+          <Box my={rem(40)}>
+            <Text
+              className="login-title"
+              fw={500}
+              style={{
+                lineHeight: 1.3,
+                color: "#fff",
+                marginBottom: rem(16),
+              }}
+            >
+              サークルの
+              <br />
+              プロジェクトを
+              <br />
+              一箇所で。
             </Text>
-          </Stack>
+            <Text style={{ color: "#888", lineHeight: 1.7, fontSize: rem(14) }}>
+              進捗・メンバー・募集状況を
+              <br />
+              リアルタイムで把握できます。
+            </Text>
+          </Box>
 
-          <Stack gap={12}>
-            {OAUTH_PROVIDERS.map((p) => (
-              <OAuthButton
-                key={p.id}
-                label={p.label}
-                icon={p.icon}
-                onClick={() => handleOAuthLogin(p.id)}
-                loading={oauthLoading === p.id}
-              />
-            ))}
-          </Stack>
+          <Text size="xs" style={{ color: "#444" }}>
+            © 2026 Projee
+          </Text>
+        </Box>
 
-         <Text
-  size="xs"
-  c="dimmed"
-  ta="center"
-  mt={rem(40)}
-  style={{ lineHeight: 1.6 }}
->
-  ログインすることで、当サービスの
-  <br />
-  <Anchor 
-    component={Link} 
-    href="/terms" 
-    size="xs" 
-    c="dimmed" 
-    underline="always"
-  >
-    利用規約
-  </Anchor>
-  {" "}および{" "}
-  <Anchor 
-    component={Link} 
-    href="/privacy" 
-    size="xs" 
-    c="dimmed" 
-    underline="always"
-  >
-    プライバシーポリシー
-  </Anchor>
-  に同意したことになります。
-</Text>
+        {/* ── 右パネル (ログイン) ── */}
+        <Box
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: rem(32),
+          }}
+        >
+          <Box style={{ width: "100%", maxWidth: rem(320) }}>
+            <Stack gap={rem(4)} mb={rem(32)} ta="center">
+              <Text fw={600} style={{ fontSize: rem(24) }}>
+                Welcome back
+              </Text>
+              <Text c="dimmed" size="sm">
+                アカウントを選択してログインしてください
+              </Text>
+            </Stack>
+
+            <Stack gap={12}>
+              {OAUTH_PROVIDERS.map((p) => (
+                <OAuthButton
+                  key={p.id}
+                  label={p.label}
+                  icon={p.icon}
+                  onClick={() => handleOAuthLogin(p.id)}
+                  loading={oauthLoading === p.id}
+                />
+              ))}
+            </Stack>
+
+            <Text
+              size="xs"
+              c="dimmed"
+              ta="center"
+              mt={rem(40)}
+              style={{ lineHeight: 1.6 }}
+            >
+              ログインすることで、当サービスの
+              <br />
+              <Anchor
+                component={Link}
+                href="/terms"
+                size="xs"
+                c="dimmed"
+                underline="always"
+              >
+                利用規約
+              </Anchor>{" "}
+              および{" "}
+              <Anchor
+                component={Link}
+                href="/privacy"
+                size="xs"
+                c="dimmed"
+                underline="always"
+              >
+                プライバシーポリシー
+              </Anchor>
+              に同意したことになります。
+            </Text>
+          </Box>
         </Box>
       </Box>
-    </Box>
+
+      {/* ── メディアクエリを CSS で記述 ── */}
+      <style>{`
+        /* デフォルト (スマホ) */
+        .login-container {
+          flex-direction: column;
+        }
+        .login-left-panel {
+          width: 100%;
+        }
+        .login-title {
+          font-size: ${rem(22)};
+        }
+
+        /* PC用 (768px以上) */
+        @media (min-width: 768px) {
+          .login-container {
+            flex-direction: row;
+          }
+          .login-left-panel {
+            width: ${rem(360)};
+            padding: ${rem(40)} !important;
+          }
+          .login-title {
+            font-size: ${rem(28)} !important;
+          }
+        }
+      `}</style>
+    </>
   );
 };
