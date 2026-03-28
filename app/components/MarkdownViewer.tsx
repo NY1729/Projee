@@ -78,7 +78,7 @@ export const MarkdownViewer = ({ content }: { content: string }) => {
                 React.isValidElement(child) &&
                 (typeof child.type === "string"
                   ? child.type === "gh-alert"
-                  : (child.type as any)?.name === "gh-alert"),
+                  : (child.type as React.ComponentType)?.displayName === "gh-alert" || (child.type as { name?: string })?.name === "gh-alert"),
             );
 
             if (hasAlert) {

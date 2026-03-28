@@ -165,20 +165,20 @@ export const ProjectRow = ({
       </Stack>
 
       {/* 4. TAGS: 技術スタック */}
-      <Group gap={4}>
-        {proj.tags?.slice(0, 2).map((tag) => (
+      <Group gap={4} wrap="wrap" style={{ minWidth: 0 }}>
+        {proj.tags?.map((tag) => (
           <Badge
             key={tag}
             variant="outline"
             color="gray"
             size="xs"
             leftSection={<IconHash size={10} />}
+            style={{ textTransform: "none" }} // 大文字強制を解除（Next.jsなどの表記を維持）
           >
             {tag}
           </Badge>
         ))}
       </Group>
-
       {/* 5. TEAM: メンバーアバター（リアルタイム反映対応） */}
       <Avatar.Group spacing="xs">
         {members
