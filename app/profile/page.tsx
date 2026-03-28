@@ -37,6 +37,7 @@ import { useAuth } from "../hooks/useAuth";
 import { updateProfile, deleteAccount } from "../actions/profile";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
+import { DASHBOARD_GRID_COLS } from "../constants/project";
 
 export default function ProfilePage() {
   const { user, loading: authLoading } = useAuth();
@@ -144,12 +145,85 @@ export default function ProfilePage() {
     });
   };
 
+  const owningProjects = projects.filter((p) => p.owner_id === user.id);
+  const joinedProjects = projects.filter((p) => p.owner_id !== user.id);
+
+  const filteredProjects =
+    activeTab === "owning" ? owningProjects : joinedProjects;
+
   return (
     <Box bg="#FBFCFD" mih="100vh">
       <DashboardHeader user={user} />
-      <Container size="lg" pt={50} pb={80}>
+
+      <Container
+        size="lg"
+        pt={{ base: 24, sm: 50 }}
+        pb={80}
+        px={{ base: 16, sm: 24 }}
+      >
+        {/* ─── モバイル：横並びプロフィールヘッダー ─── */}
+        <Box hiddenFrom="sm" mb="xl">
+          <Group gap={16} align="center" mb="md">
+            <Skeleton visible={loading} circle>
+              <Avatar
+                src={displayAvatar}
+                size={72}
+                radius={36}
+                style={{
+                  border: "1px solid var(--mantine-color-gray-2)",
+                  flexShrink: 0,
+                }}
+              />
+            </Skeleton>
+            <Box style={{ flex: 1, minWidth: 0 }}>
+              <Skeleton visible={loading} height={28} width="60%" mb={4}>
+                <Title
+                  order={2}
+                  style={{
+                    fontSize: rem(20),
+                    letterSpacing: "-0.02em",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {username}
+                </Title>
+              </Skeleton>
+              <Text size="xs" c="dimmed">
+                @{username}
+              </Text>
+            </Box>
+          </Group>
+
+          <Group gap={8}>
+            <Button
+              variant="default"
+              size="xs"
+              leftSection={<IconSettings size={13} />}
+              onClick={open}
+              radius="md"
+              style={{ flex: 1 }}
+            >
+              編集する
+            </Button>
+            <Button
+              variant="subtle"
+              color="red"
+              size="xs"
+              leftSection={<IconTrash size={13} />}
+              onClick={openDeleteModal}
+              radius="md"
+            >
+              削除
+            </Button>
+          </Group>
+        </Box>
+
+        {/* ─── デスクトップ：元のサイドバー + タブ ─── */}
         <Group align="flex-start" gap={40} wrap="nowrap" visibleFrom="sm">
-          <Stack style={{ width: rem(280) }}>
+          {/* サイドバー */}
+          <Stack style={{ width: rem(280), flexShrink: 0 }}>
             <Skeleton visible={loading} circle mb="md">
               <Avatar
                 src={displayAvatar}
@@ -195,43 +269,30 @@ export default function ProfilePage() {
             </Skeleton>
           </Stack>
 
-          <Stack style={{ flex: 1 }}>
-            <Tabs value={activeTab} onChange={setActiveTab} variant="outline">
-              <Tabs.List>
-                <Tabs.Tab value="owning" leftSection={<IconRocket size={14} />}>
-                  所有プロジェクト
-                </Tabs.Tab>
-                <Tabs.Tab
-                  value="joined"
-                  leftSection={<IconCircleCheck size={14} />}
-                >
-                  参加中
-                </Tabs.Tab>
-              </Tabs.List>
-              <Box mt="xl">
-                <Paper withBorder radius="md">
-                  {loading ? (
-                    <Skeleton height={200} />
-                  ) : projects.length > 0 ? (
-                    projects
-                      .filter((p) =>
-                        activeTab === "owning"
-                          ? p.owner_id === user.id
-                          : p.owner_id !== user.id,
-                      )
-                      .map((p) => (
-                        <ProjectRow key={p.id} proj={p} currentUser={user} />
-                      ))
-                  ) : (
-                    <Box p="xl" ta="center">
-                      <Text c="dimmed">なし</Text>
-                    </Box>
-                  )}
-                </Paper>
-              </Box>
-            </Tabs>
+          {/* プロジェクト一覧 */}
+          <Stack style={{ flex: 1, minWidth: 0 }}>
+            <ProjectTabs
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              loading={loading}
+              filteredProjects={filteredProjects}
+              user={user}
+              showHeader
+            />
           </Stack>
         </Group>
+
+        {/* ─── モバイル：タブのみ ─── */}
+        <Box hiddenFrom="sm">
+          <ProjectTabs
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            loading={loading}
+            filteredProjects={filteredProjects}
+            user={user}
+            showHeader={false}
+          />
+        </Box>
       </Container>
 
       <Modal
@@ -302,5 +363,78 @@ export default function ProfilePage() {
         </form>
       </Modal>
     </Box>
+  );
+}
+
+// ─── プロジェクト一覧タブ（共通コンポーネント） ──────────────────────────────
+interface ProjectTabsProps {
+  activeTab: string | null;
+  setActiveTab: (tab: string | null) => void;
+  loading: boolean;
+  filteredProjects: Project[];
+  user: NonNullable<ReturnType<typeof useAuth>["user"]>;
+  showHeader: boolean;
+}
+
+function ProjectTabs({
+  activeTab,
+  setActiveTab,
+  loading,
+  filteredProjects,
+  user,
+  showHeader,
+}: ProjectTabsProps) {
+  return (
+    <Tabs value={activeTab} onChange={setActiveTab} variant="outline">
+      <Tabs.List>
+        <Tabs.Tab value="owning" leftSection={<IconRocket size={14} />}>
+          所有
+        </Tabs.Tab>
+        <Tabs.Tab value="joined" leftSection={<IconCircleCheck size={14} />}>
+          参加中
+        </Tabs.Tab>
+      </Tabs.List>
+
+      <Box mt="md">
+        <Paper withBorder radius="md" style={{ overflow: "hidden" }}>
+          {/* テーブルヘッダー（デスクトップのみ） */}
+          {showHeader && (
+            <Box
+              px="md"
+              py={10}
+              bg="#fcfcfd"
+              style={{
+                display: "grid",
+                gridTemplateColumns: DASHBOARD_GRID_COLS,
+                gap: "16px",
+                borderBottom: "1px solid #f1f3f5",
+              }}
+            >
+              {["PROJECT", "STATUS", "PROGRESS", "TAGS", "TEAM", ""].map(
+                (l, i) => (
+                  <Text key={i} size="xs" fw={700} c="gray.5">
+                    {l}
+                  </Text>
+                ),
+              )}
+            </Box>
+          )}
+
+          {loading ? (
+            <Skeleton height={160} radius={0} />
+          ) : filteredProjects.length > 0 ? (
+            filteredProjects.map((p) => (
+              <ProjectRow key={p.id} proj={p} currentUser={user} />
+            ))
+          ) : (
+            <Box py={48} ta="center">
+              <Text c="dimmed" size="sm">
+                なし
+              </Text>
+            </Box>
+          )}
+        </Paper>
+      </Box>
+    </Tabs>
   );
 }

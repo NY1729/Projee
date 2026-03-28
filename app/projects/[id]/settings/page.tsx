@@ -721,8 +721,8 @@ interface SettingsContentProps {
   approvedMembers: NonNullable<Project["member_details"]>;
   pendingMembers: NonNullable<Project["member_details"]>;
   SelectedIcon: React.FC<{ size?: number; stroke?: number }>;
-  handleSaveOverview: (values: any) => void;
-  handleSaveStatus: (values: any) => void;
+  handleSaveOverview: (values: { title: string; description: string; icon: string; url: string }) => void;
+  handleSaveStatus: (values: { status: string; progress: number; tags: string[] }) => void;
   handleVisibilityChange: () => void;
   handleUpdatePosition: (id: string, pos: string) => void;
   handleApprove: (id: string) => void;

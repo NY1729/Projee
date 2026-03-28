@@ -38,17 +38,13 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     window.location.href = "/";
   };
 
-  /**
-   * profilesテーブルから最新情報を取得する関数
-   */
   const fetchHeaderProfile = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, full_name, avatar_url, updated_at")
+      .select("id, username, avatar_url, updated_at")
       .eq("id", user.id)
       .single();
-
     if (data && !error) {
       setHeaderProfile(data as Profile);
     }
@@ -58,33 +54,20 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     if (!user) return;
 
     let isMounted = true;
+    queueMicrotask(() => {
+      if (isMounted) fetchHeaderProfile();
+    });
 
-    const initializeProfile = async () => {
-      // 初回ロード
-      await fetchHeaderProfile();
-    };
-
-    initializeProfile();
-
-    /**
-     * 1. Supabase Auth の状態変化を監視
-     * サーバーアクションの auth.updateUser() によってメタデータが更新されると
-     * 'USER_UPDATED' イベントが発火します。
-     */
     const {
       data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange((event) => {
       if (isMounted && (event === "USER_UPDATED" || event === "SIGNED_IN")) {
         fetchHeaderProfile();
       }
     });
 
-    /**
-     * 2. profiles テーブルの直接的な更新を購読 (Realtime)
-     * 他のタブやデバイスでの変更を即座に反映させます。
-     */
     const profileChannel = supabase
-      .channel(`header_profile_${user.id}`)
+      .channel(`header_profile_realtime_${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -106,10 +89,19 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     };
   }, [user, fetchHeaderProfile]);
 
-  // 表示用データの計算
-  // サーバー側でファイル名が変わるため、URLの変化そのものを key に渡して再描画を促します
-  const displayAvatar =
+  // --- 表示データの優先順位ロジック ---
+
+  // 1. DBのプロフィールを最優先、なければAuthメタデータ
+  const rawAvatar =
     headerProfile?.avatar_url || user?.user_metadata?.avatar_url;
+
+  // 画像キャッシュ対策: updated_at があればクエリパラメータとして付与
+  const displayAvatar =
+    rawAvatar && headerProfile?.updated_at
+      ? `${rawAvatar}?t=${new Date(headerProfile.updated_at).getTime()}`
+      : rawAvatar;
+
+  // 名前もプロフィール(DB)を最優先
   const displayName =
     headerProfile?.full_name?.split(" ")[0] ||
     headerProfile?.username ||
@@ -133,7 +125,6 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     >
       <Container size="lg" style={{ width: "100%" }}>
         <Group justify="space-between" align="center">
-          {/* ロゴ */}
           <Link href="/" style={{ textDecoration: "none" }}>
             <Group gap={8} align="center">
               <Box
@@ -204,7 +195,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                         src={displayAvatar}
                         radius="xl"
                         size={24}
-                        // ファイル名が変わった瞬間にコンポーネントをリセットして新画像を強制ロード
+                        // 画像URL（タイムスタンプ込）をkeyにして変更を即時検知
                         key={displayAvatar}
                       />
                       <Text size="sm" fw={500} visibleFrom="sm">
