@@ -21,7 +21,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { User } from "@supabase/supabase-js";
 import Link from "next/link";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Profile } from "../types/project";
 import { useRouter } from "next/navigation";
 
@@ -32,42 +32,94 @@ type DashboardHeaderProps = {
 export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
   const [headerProfile, setHeaderProfile] = useState<Profile | null>(null);
   const router = useRouter();
+  const isSyncing = useRef(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/";
   };
 
+  /**
+   * Authのメタデータを profiles テーブルに強制同期（上書き）させる関数
+   */
+  const syncAuthToProfile = useCallback(async (currUser: User) => {
+    if (isSyncing.current) return;
+    isSyncing.current = true;
+
+    const metadata = currUser.user_metadata;
+    // Googleは 'picture'、GitHubは 'avatar_url' を使うため両方チェック
+    const authAvatar = metadata?.avatar_url || metadata?.picture;
+    const authFullName = metadata?.full_name;
+
+    if (!authAvatar && !authFullName) {
+      isSyncing.current = false;
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({
+        avatar_url: authAvatar,
+        full_name: authFullName,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", currUser.id)
+      .select()
+      .single();
+
+    if (data && !error) {
+      setHeaderProfile(data as Profile);
+    }
+    isSyncing.current = false;
+  }, []);
+
+  /**
+   * DBから情報を取得し、Auth側と差異があれば同期を実行する
+   */
   const fetchHeaderProfile = useCallback(async () => {
     if (!user) return;
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, avatar_url, updated_at")
+      .select("id, username, full_name, avatar_url, updated_at")
       .eq("id", user.id)
       .single();
+
+    const authAvatar =
+      user.user_metadata?.avatar_url || user.user_metadata?.picture;
+
     if (data && !error) {
-      setHeaderProfile(data as Profile);
+      // DBの値が空、もしくはAuth側の画像URLと一致しない場合はAuthで上書き
+      if (authAvatar && data.avatar_url !== authAvatar) {
+        await syncAuthToProfile(user);
+      } else {
+        setHeaderProfile(data as Profile);
+      }
+    } else if (error && authAvatar) {
+      // Profilesにレコード自体がない場合も同期（作成）を試みる
+      await syncAuthToProfile(user);
     }
-  }, [user]);
+  }, [user, syncAuthToProfile]);
 
   useEffect(() => {
     if (!user) return;
 
     let isMounted = true;
-    queueMicrotask(() => {
+    const timeoutId = setTimeout(() => {
       if (isMounted) fetchHeaderProfile();
-    });
+    }, 0);
 
+    // Auth状態の変化（ログイン時やメタデータ更新時）を監視
     const {
       data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange((event) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (isMounted && (event === "USER_UPDATED" || event === "SIGNED_IN")) {
-        fetchHeaderProfile();
+        if (session?.user) syncAuthToProfile(session.user);
       }
     });
 
+    // Realtime: 他のデバイスでの更新を検知
     const profileChannel = supabase
-      .channel(`header_profile_realtime_${user.id}`)
+      .channel(`header_sync_realtime_${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -76,32 +128,32 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
           table: "profiles",
           filter: `id=eq.${user.id}`,
         },
-        () => {
-          if (isMounted) fetchHeaderProfile();
+        (payload) => {
+          if (isMounted) setHeaderProfile(payload.new as Profile);
         },
       )
       .subscribe();
 
     return () => {
       isMounted = false;
+      clearTimeout(timeoutId);
       authListener.unsubscribe();
       supabase.removeChannel(profileChannel);
     };
-  }, [user, fetchHeaderProfile]);
+  }, [user, fetchHeaderProfile, syncAuthToProfile]);
 
-  // --- 表示データの優先順位ロジック ---
-
-  // 1. DBのプロフィールを最優先、なければAuthメタデータ
-  const rawAvatar =
-    headerProfile?.avatar_url || user?.user_metadata?.avatar_url;
-
-  // 画像キャッシュ対策: updated_at があればクエリパラメータとして付与
+  // --- 表示用URLと名前の計算 ---
   const displayAvatar =
-    rawAvatar && headerProfile?.updated_at
-      ? `${rawAvatar}?t=${new Date(headerProfile.updated_at).getTime()}`
-      : rawAvatar;
+    headerProfile?.avatar_url ||
+    user?.user_metadata?.avatar_url ||
+    user?.user_metadata?.picture;
 
-  // 名前もプロフィール(DB)を最優先
+  // ブラウザキャッシュ対策: updated_at をクエリに付与
+  const avatarSrc =
+    displayAvatar && headerProfile?.updated_at
+      ? `${displayAvatar}${displayAvatar.includes("?") ? "&" : "?"}t=${new Date(headerProfile.updated_at).getTime()}`
+      : displayAvatar;
+
   const displayName =
     headerProfile?.full_name?.split(" ")[0] ||
     headerProfile?.username ||
@@ -112,7 +164,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     <Paper
       component="header"
       style={{
-        borderBottom: "0.5px solid var(--mantine-color-gray-2)",
+        borderBottom: "1px solid var(--mantine-color-gray-2)",
         position: "sticky",
         top: 0,
         zIndex: 100,
@@ -187,16 +239,15 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                       style={{
                         padding: `${rem(4)} ${rem(8)}`,
                         borderRadius: rem(6),
-                        border: "0.5px solid var(--mantine-color-gray-3)",
+                        border: "1px solid var(--mantine-color-gray-3)",
                       }}
                       className="header-user-btn"
                     >
                       <Avatar
-                        src={displayAvatar}
+                        src={avatarSrc}
                         radius="xl"
                         size={24}
-                        // 画像URL（タイムスタンプ込）をkeyにして変更を即時検知
-                        key={displayAvatar}
+                        key={avatarSrc}
                       />
                       <Text size="sm" fw={500} visibleFrom="sm">
                         {displayName}
@@ -214,7 +265,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                     px={12}
                     py={10}
                     style={{
-                      borderBottom: "0.5px solid var(--mantine-color-gray-1)",
+                      borderBottom: "1px solid var(--mantine-color-gray-1)",
                     }}
                   >
                     <Text size="xs" fw={600} truncate>
