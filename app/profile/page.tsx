@@ -90,28 +90,97 @@ export default function ProfilePage() {
   const username = profile?.username || user.email?.split("@")[0];
   const displayAvatar = profile?.avatar_url || null;
 
+  // ─── handleSubmit の中身を修正 ──────────────────────────────────────────────
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaveLoading(true);
-    const formData = new FormData(event.currentTarget);
-    if (avatarFile) formData.append("avatar", avatarFile);
 
     try {
-      await updateProfile(formData);
+      const formData = new FormData(event.currentTarget);
+
+      if (avatarFile) {
+        // スマホの大容量画像をリサイズ・圧縮（最大1024px, 品質0.7）
+        const compressedFile = await resizeImage(avatarFile, 1024);
+        formData.append("avatar", compressedFile);
+      }
+
+      const result = await updateProfile(formData);
+
+      // 成功時の処理
       setAvatarFile(null);
       setPreviewUrl(null);
+      notifications.show({
+        title: "更新完了",
+        message: "プロフィールを更新しました",
+        color: "teal",
+        icon: <IconCheck size={16} />,
+      });
+
+      // セッションとプロフィールを最新に
       await supabase.auth.refreshSession();
-      close();
       await fetchProfile();
+      close();
     } catch (e) {
+      console.error(e);
       notifications.show({
         title: "エラー",
-        message: "更新に失敗しました",
+        message: "画像のサイズが大きすぎるか、通信環境が不安定です",
         color: "red",
       });
     } finally {
       setSaveLoading(false);
     }
+  };
+
+  // ─── 画像リサイズ用ヘルパー関数 ──────────────────────────────────────────────
+  const resizeImage = (file: File, maxSize: number): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxSize) {
+              height *= maxSize / width;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width *= maxSize / height;
+              height = maxSize;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const resizedFile = new File([blob], file.name, {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                });
+                resolve(resizedFile);
+              } else {
+                reject(new Error("Canvas is empty"));
+              }
+            },
+            "image/jpeg",
+            0.7, // 圧縮率（70%に落とすことで大幅に軽量化）
+          );
+        };
+      };
+      reader.onerror = (error) => reject(error);
+    });
   };
 
   const openDeleteModal = () => {
