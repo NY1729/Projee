@@ -21,7 +21,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { User } from "@supabase/supabase-js";
 import Link from "next/link";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, startTransition } from "react";
 import { Profile } from "../types/project";
 import { useRouter } from "next/navigation";
 
@@ -95,7 +95,9 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
     // 初回マウント時、必ず profiles から取得を実行
     if (!hasInitialized.current) {
       hasInitialized.current = true;
-      fetchHeaderProfile();
+      startTransition(() => {
+        fetchHeaderProfile();
+      });
     }
 
     // Profilesテーブルの更新をリアルタイム購読

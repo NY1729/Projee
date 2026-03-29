@@ -311,31 +311,32 @@ export default function ProjectDetailPage() {
       }}
     >
       <DashboardHeader user={user} />
-      <Container size="lg" pt="xl" pb={80}>
-        <Stack gap={10} mb="xl">
-          <Group gap={5}>
-            <Anchor
-              size="xs"
-              c="dimmed"
-              underline="never"
-              onClick={() => router.push("/")}
-              style={{
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 3,
-              }}
-            >
-              <IconArrowLeft size={11} /> Dashboard
-            </Anchor>
-            <Text size="xs" c="dimmed">
-              /
-            </Text>
-            <Text size="xs" c="dimmed" truncate>
-              {project.title}
-            </Text>
-          </Group>
 
+      <Container size="lg" pt={rem(24)} pb={80}>
+        {/* パンくずリスト：位置と余白を固定 */}
+        <Group gap={4} mb="lg" wrap="nowrap" style={{ overflow: "hidden" }}>
+          <Anchor
+            size="xs"
+            c="dimmed"
+            underline="never"
+            onClick={() => router.push("/")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              flexShrink: 0,
+            }}
+          >
+            <IconArrowLeft size={14} /> Dashboard
+          </Anchor>
+          <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
+            /
+          </Text>
+          <Text size="xs" fw={600} truncate style={{ maxWidth: rem(200) }}>
+            {project.title}
+          </Text>
+        </Group>
+        <Stack gap={10} mb="xl">
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <Group gap={14} align="flex-start" style={{ minWidth: 0 }}>
               <ThemeIcon

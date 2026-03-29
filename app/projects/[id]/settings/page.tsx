@@ -26,6 +26,7 @@ import {
   Center,
   ActionIcon,
   ScrollArea,
+  Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import {
@@ -482,43 +483,50 @@ export default function ProjectSettingsPage() {
       <DashboardHeader user={user} />
 
       <Container size="lg" pt={rem(24)} pb={80} px={{ base: 16, sm: 24 }}>
-        {/* パンくず */}
-        <Group gap={4} mb={8} wrap="nowrap" style={{ overflow: "hidden" }}>
+        {/* パンくずリスト：詳細画面と完全に一致させる */}
+        <Group gap={4} mb="lg" wrap="nowrap" style={{ overflow: "hidden" }}>
           <Anchor
             size="xs"
             c="dimmed"
             underline="never"
             onClick={() => router.push("/")}
             style={{
-              cursor: "pointer",
               display: "flex",
               alignItems: "center",
               gap: 4,
               flexShrink: 0,
             }}
           >
-            <IconArrowLeft size={13} />
-            <Text size="xs" c="dimmed" visibleFrom="xs">
-              Dashboard
-            </Text>
+            <IconArrowLeft size={14} /> Dashboard
           </Anchor>
           <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             /
           </Text>
-          <Text size="xs" c="dimmed" truncate style={{ maxWidth: rem(120) }}>
-            {project.title}
-          </Text>
+          <Anchor
+            size="xs"
+            c="dimmed"
+            underline="never"
+            truncate
+            style={{ maxWidth: rem(160), cursor: "pointer" }}
+            onClick={() => router.push(`/projects/${project.id}`)}
+          >
+            {overviewForm.values.title || project.title}
+          </Anchor>
           <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
             /
           </Text>
-          <Text size="xs" fw={500} style={{ flexShrink: 0 }}>
+          <Text size="xs" fw={600} style={{ flexShrink: 0 }}>
             Settings
           </Text>
         </Group>
-
-        <Text fw={600} style={{ fontSize: rem(18) }} mb="md">
+        <Title
+          order={1}
+          fw={700}
+          style={{ fontSize: rem(22), letterSpacing: "-0.02em" }}
+          mb="lg"
+        >
           Project Settings
-        </Text>
+        </Title>
         <Divider mb="xl" color="gray.2" />
 
         {/* ─── モバイル：横スクロールタブ ─── */}
@@ -721,8 +729,17 @@ interface SettingsContentProps {
   approvedMembers: NonNullable<Project["member_details"]>;
   pendingMembers: NonNullable<Project["member_details"]>;
   SelectedIcon: React.FC<{ size?: number; stroke?: number }>;
-  handleSaveOverview: (values: { title: string; description: string; icon: string; url: string }) => void;
-  handleSaveStatus: (values: { status: string; progress: number; tags: string[] }) => void;
+  handleSaveOverview: (values: {
+    title: string;
+    description: string;
+    icon: string;
+    url: string;
+  }) => void;
+  handleSaveStatus: (values: {
+    status: string;
+    progress: number;
+    tags: string[];
+  }) => void;
   handleVisibilityChange: () => void;
   handleUpdatePosition: (id: string, pos: string) => void;
   handleApprove: (id: string) => void;
