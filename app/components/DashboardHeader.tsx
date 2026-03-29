@@ -33,6 +33,7 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
   const [headerProfile, setHeaderProfile] = useState<Profile | null>(null);
   const router = useRouter();
   const isSyncing = useRef(false);
+  const hasInitialized = useRef(false);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -40,86 +41,66 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
   };
 
   /**
-   * Authのメタデータを profiles テーブルに強制同期（上書き）させる関数
+   * DB (profiles) の最新情報を Auth メタデータに強制上書きする
    */
-  const syncAuthToProfile = useCallback(async (currUser: User) => {
-    if (isSyncing.current) return;
-    isSyncing.current = true;
+  const syncProfileToAuth = useCallback(
+    async (profile: Profile) => {
+      if (isSyncing.current || !user) return;
+      isSyncing.current = true;
 
-    const metadata = currUser.user_metadata;
-    // Googleは 'picture'、GitHubは 'avatar_url' を使うため両方チェック
-    const authAvatar = metadata?.avatar_url || metadata?.picture;
-    const authFullName = metadata?.full_name;
+      const authAvatar =
+        user.user_metadata?.avatar_url || user.user_metadata?.picture;
+      const authUserName = user.user_metadata?.username;
 
-    if (!authAvatar && !authFullName) {
+      // DBとAuthで差異がある場合のみ、Auth側をアップデート
+      if (
+        profile.avatar_url !== authAvatar ||
+        profile.username !== authUserName
+      ) {
+        await supabase.auth.updateUser({
+          data: {
+            avatar_url: profile.avatar_url,
+            username: profile.username,
+          },
+        });
+      }
       isSyncing.current = false;
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({
-        avatar_url: authAvatar,
-        full_name: authFullName,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", currUser.id)
-      .select()
-      .single();
-
-    if (data && !error) {
-      setHeaderProfile(data as Profile);
-    }
-    isSyncing.current = false;
-  }, []);
+    },
+    [user],
+  );
 
   /**
-   * DBから情報を取得し、Auth側と差異があれば同期を実行する
+   * 初回および更新時に必ず profiles テーブルから取得するメインロジック
    */
   const fetchHeaderProfile = useCallback(async () => {
     if (!user) return;
+
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, username, full_name, avatar_url, updated_at")
+      .select("id, username, avatar_url, updated_at")
       .eq("id", user.id)
       .single();
 
-    const authAvatar =
-      user.user_metadata?.avatar_url || user.user_metadata?.picture;
-
     if (data && !error) {
-      // DBの値が空、もしくはAuth側の画像URLと一致しない場合はAuthで上書き
-      if (authAvatar && data.avatar_url !== authAvatar) {
-        await syncAuthToProfile(user);
-      } else {
-        setHeaderProfile(data as Profile);
-      }
-    } else if (error && authAvatar) {
-      // Profilesにレコード自体がない場合も同期（作成）を試みる
-      await syncAuthToProfile(user);
+      const profile = data as Profile;
+      setHeaderProfile(profile);
+      // profiles 取得後、Auth 側をこのデータで上書き
+      await syncProfileToAuth(profile);
     }
-  }, [user, syncAuthToProfile]);
+  }, [user, syncProfileToAuth]);
 
   useEffect(() => {
     if (!user) return;
 
-    let isMounted = true;
-    const timeoutId = setTimeout(() => {
-      if (isMounted) fetchHeaderProfile();
-    }, 0);
+    // 初回マウント時、必ず profiles から取得を実行
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      fetchHeaderProfile();
+    }
 
-    // Auth状態の変化（ログイン時やメタデータ更新時）を監視
-    const {
-      data: { subscription: authListener },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (isMounted && (event === "USER_UPDATED" || event === "SIGNED_IN")) {
-        if (session?.user) syncAuthToProfile(session.user);
-      }
-    });
-
-    // Realtime: 他のデバイスでの更新を検知
+    // Profilesテーブルの更新をリアルタイム購読
     const profileChannel = supabase
-      .channel(`header_sync_realtime_${user.id}`)
+      .channel(`header_db_master_sync_${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -129,36 +110,33 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
           filter: `id=eq.${user.id}`,
         },
         (payload) => {
-          if (isMounted) setHeaderProfile(payload.new as Profile);
+          const newProfile = payload.new as Profile;
+          setHeaderProfile(newProfile);
+          // DBが更新されたら即座にAuth側も上書き
+          syncProfileToAuth(newProfile);
         },
       )
       .subscribe();
 
     return () => {
-      isMounted = false;
-      clearTimeout(timeoutId);
-      authListener.unsubscribe();
       supabase.removeChannel(profileChannel);
     };
-  }, [user, fetchHeaderProfile, syncAuthToProfile]);
+  }, [user, fetchHeaderProfile, syncProfileToAuth]);
 
-  // --- 表示用URLと名前の計算 ---
+  // --- 表示データの確定 ---
+  // headerProfile (DB) があればそれを使い、読み込み中のみ user (Auth) をフォールバックにする
   const displayAvatar =
     headerProfile?.avatar_url ||
     user?.user_metadata?.avatar_url ||
     user?.user_metadata?.picture;
 
-  // ブラウザキャッシュ対策: updated_at をクエリに付与
   const avatarSrc =
     displayAvatar && headerProfile?.updated_at
       ? `${displayAvatar}${displayAvatar.includes("?") ? "&" : "?"}t=${new Date(headerProfile.updated_at).getTime()}`
       : displayAvatar;
 
   const displayName =
-    headerProfile?.full_name?.split(" ")[0] ||
-    headerProfile?.username ||
-    user?.user_metadata?.full_name?.split(" ")[0] ||
-    "User";
+    headerProfile?.username || user?.user_metadata?.username || "User";
 
   return (
     <Paper
@@ -248,6 +226,8 @@ export const DashboardHeader = ({ user }: DashboardHeaderProps) => {
                         radius="xl"
                         size={24}
                         key={avatarSrc}
+                        name={displayName}
+                        color="initials"
                       />
                       <Text size="sm" fw={500} visibleFrom="sm">
                         {displayName}
