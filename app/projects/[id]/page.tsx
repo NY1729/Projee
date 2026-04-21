@@ -487,7 +487,6 @@ export default function ProjectDetailPage() {
                               variant="light"
                               color="blue"
                               radius="md"
-                              disabled
                               fullWidth
                               onClick={handleCancelRequest}
                             >
